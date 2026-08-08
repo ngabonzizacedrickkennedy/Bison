@@ -173,3 +173,13 @@ export type TaskNode = z.infer<typeof TaskNodeSchema>;
 export type TaskTree = z.infer<typeof TaskTreeSchema>;
 export type TaskProgress = z.infer<typeof TaskProgressSchema>;
 export type ProgressSnapshot = z.infer<typeof ProgressSnapshotSchema>;
+
+export type CheckType = z.infer<typeof CheckTypeSchema>;
+export type AssignedRole = z.infer<typeof AssignedRoleSchema>;
+
+const _checkTypeCoverage: Record<CheckType, true> = CheckSpecSchema.options.reduce(
+  (acc, option) => ({ ...acc, [option.shape.type.value]: true }),
+  {} as Record<CheckType, true>,
+);
+
+void _checkTypeCoverage;

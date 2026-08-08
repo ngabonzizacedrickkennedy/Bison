@@ -3,4 +3,5 @@ packages:
   - "services/*"
   - "packages/*"
 
-useNodeFetch: true
+allowBuilds:
+  esbuild: true

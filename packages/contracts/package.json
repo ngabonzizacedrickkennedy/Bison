@@ -9,12 +9,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./schema": "./generated/bison-contracts.schema.json"
   },
   "scripts": {
-    "build": "tsc --build",
+    "build": "tsc --build && pnpm run generate:schema",
+    "generate:schema": "tsx scripts/generate-json-schema.ts",
     "typecheck": "tsc --noEmit",
-    "clean": "rimraf dist .turbo"
+    "clean": "rimraf dist generated .turbo tsconfig.tsbuildinfo"
   },
   "dependencies": {
     "zod": "^3.24.1"
@@ -22,6 +24,8 @@
   "devDependencies": {
     "@bison/tsconfig": "workspace:*",
     "rimraf": "^6.0.1",
-    "typescript": "^5.7.2"
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "zod-to-json-schema": "^3.24.1"
   }
 }
