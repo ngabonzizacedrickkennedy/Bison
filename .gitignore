@@ -9,6 +9,7 @@ dist/
 out/
 build/
 generated/
+src/bison_contracts/models.py
 .turbo/
 *.db
 *.sqlite
