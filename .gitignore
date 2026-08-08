@@ -10,6 +10,7 @@ out/
 build/
 generated/
 src/bison_contracts/models.py
+packages/contracts-py/src/bison_contracts/models.py
 .turbo/
 *.db
 *.sqlite
