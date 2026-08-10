@@ -1,1 +1,1 @@
-export const SERVICE_NAME = 'engine-session-service';
+export const SERVICE_NAME = "engine-session-service";

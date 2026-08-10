@@ -1,21 +1,21 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const CapabilityStrengthSchema = z.enum([
-  'full',
-  'medium',
-  'weak',
-  'verified',
-  'unverified',
-  'unavailable',
+  "full",
+  "medium",
+  "weak",
+  "verified",
+  "unverified",
+  "unavailable",
 ]);
 
-export const SandboxBackendSchema = z.enum(['docker', 'job_object', 'wasm']);
-export const SecretsBackendSchema = z.enum(['keytar', 'age_file']);
-export const OcrBackendSchema = z.enum(['tesseract_bundled', 'tesseract_system']);
-export const DatabaseBackendSchema = z.enum(['sqlite', 'postgres']);
-export const CacheBackendSchema = z.enum(['in_process', 'redis']);
-export const InputInjectionBackendSchema = z.enum(['pyautogui']);
-export const ScreenCaptureBackendSchema = z.enum(['mss']);
+export const SandboxBackendSchema = z.enum(["docker", "job_object", "wasm"]);
+export const SecretsBackendSchema = z.enum(["keytar", "age_file"]);
+export const OcrBackendSchema = z.enum(["tesseract_bundled", "tesseract_system"]);
+export const DatabaseBackendSchema = z.enum(["sqlite", "postgres"]);
+export const CacheBackendSchema = z.enum(["in_process", "redis"]);
+export const InputInjectionBackendSchema = z.enum(["pyautogui"]);
+export const ScreenCaptureBackendSchema = z.enum(["mss"]);
 
 const capability = <T extends z.ZodTypeAny>(backend: T) =>
   z.object({

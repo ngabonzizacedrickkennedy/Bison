@@ -1,97 +1,92 @@
-import { z } from 'zod';
+import { z } from "zod";
 import {
   IdSchema,
   NonEmptyStringSchema,
   PercentageSchema,
   TimestampSchema,
   WeightSchema,
-} from './primitives.js';
+} from "./primitives.js";
 
 export const TaskStateSchema = z.enum([
-  'pending',
-  'ready',
-  'in_progress',
-  'blocked',
-  'awaiting_confirmation',
-  'awaiting_clarification',
-  'verifying',
-  'done',
-  'failed',
-  'skipped',
-  'ignored',
+  "pending",
+  "ready",
+  "in_progress",
+  "blocked",
+  "awaiting_confirmation",
+  "awaiting_clarification",
+  "verifying",
+  "done",
+  "failed",
+  "skipped",
+  "ignored",
 ]);
 
-export const TaskOriginSchema = z.enum(['analyst', 'engine', 'mediator', 'user']);
+export const TaskOriginSchema = z.enum(["analyst", "engine", "mediator", "user"]);
 
 export const TaskKindSchema = z.enum([
-  'code',
-  'automation',
-  'research',
-  'real_world',
-  'setup',
-  'verification',
+  "code",
+  "automation",
+  "research",
+  "real_world",
+  "setup",
+  "verification",
 ]);
 
-export const AssignedRoleSchema = z.enum(['engine', 'mediator', 'user']);
+export const AssignedRoleSchema = z.enum(["engine", "mediator", "user"]);
 
-export const CheckKindSchema = z.enum(['deterministic', 'inspected']);
+export const CheckKindSchema = z.enum(["deterministic", "inspected"]);
 
-export const CriterionStatusSchema = z.enum([
-  'unverified',
-  'verified',
-  'failed',
-  'ignored',
-]);
+export const CriterionStatusSchema = z.enum(["unverified", "verified", "failed", "ignored"]);
 
 export const CheckTypeSchema = z.enum([
-  'file_exists',
-  'file_hash',
-  'port_open',
-  'http_status',
-  'sql_result',
-  'process_exit',
-  'window_title',
-  'text_on_screen',
+  "file_exists",
+  "file_hash",
+  "port_open",
+  "http_status",
+  "sql_result",
+  "process_exit",
+  "window_title",
+  "text_on_screen",
 ]);
 
-export const CheckSpecSchema = z.discriminatedUnion('type', [
+export const CheckSpecSchema = z.discriminatedUnion("type", [
   z.object({
-    type: z.literal('file_exists'),
+    type: z.literal("file_exists"),
     path: NonEmptyStringSchema,
   }),
   z.object({
-    type: z.literal('file_hash'),
+    type: z.literal("file_hash"),
     path: NonEmptyStringSchema,
     expected_sha256: NonEmptyStringSchema,
   }),
   z.object({
-    type: z.literal('port_open'),
+    type: z.literal("port_open"),
     host: NonEmptyStringSchema,
     port: z.number().int().min(1).max(65535),
   }),
   z.object({
-    type: z.literal('http_status'),
+    type: z.literal("http_status"),
     url: NonEmptyStringSchema,
     expected_status: z.number().int().min(100).max(599),
     timeout_ms: z.number().int().positive(),
   }),
   z.object({
-    type: z.literal('sql_result'),
+    type: z.literal("sql_result"),
     connection_ref: NonEmptyStringSchema,
     query: NonEmptyStringSchema,
     expect: NonEmptyStringSchema,
   }),
   z.object({
-    type: z.literal('process_exit'),
+    type: z.literal("process_exit"),
     step_id: IdSchema,
     expected_code: z.number().int(),
   }),
   z.object({
-    type: z.literal('window_title'),
+    type: z.literal("window_title"),
     pattern: NonEmptyStringSchema,
   }),
   z.object({
-    type: z.literal('text_on_screen'),
+    type: z.literal("text_on_screen"),
     text: NonEmptyStringSchema,
     region: z
       .object({

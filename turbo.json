@@ -1,27 +1,29 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "ui": "tui",
-  "globalDependencies": ["**/.env.*local"],
+  "globalDependencies": [".npmrc", "pnpm-lock.yaml", "packages/tsconfig/base.json"],
+  "globalEnv": [
+    "NODE_OPTIONS",
+    "NODE_EXTRA_CA_CERTS",
+    "SSL_CERT_FILE",
+    "REQUESTS_CA_BUNDLE",
+    "UV_SYSTEM_CERTS"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "inputs": ["src/**", "prompts/**", "tsconfig.json", "package.json"],
-      "outputs": ["dist/**", "generated/**"]
+      "outputs": ["dist/**", "generated/**", "*.tsbuildinfo"]
+    },
+    "codegen": {
+      "dependsOn": ["@bison/contracts#build"],
+      "cache": false
     },
     "typecheck": {
       "dependsOn": ["^build"],
-      "inputs": ["src/**", "tsconfig.json"]
+      "outputs": []
     },
     "test": {
       "dependsOn": ["^build"],
-      "inputs": ["src/**", "tests/**"]
-    },
-    "lint": {
-      "inputs": ["src/**", "tests/**"]
-    },
-    "dev": {
-      "cache": false,
-      "persistent": true
+      "outputs": []
     },
     "clean": {
       "cache": false

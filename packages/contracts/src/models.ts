@@ -1,28 +1,18 @@
-import { z } from 'zod';
-import {
-  IdSchema,
-  NonEmptyStringSchema,
-  TimestampSchema,
-  UrlSchema,
-} from './primitives.js';
+import { z } from "zod";
+import { IdSchema, NonEmptyStringSchema, TimestampSchema, UrlSchema } from "./primitives.js";
 
-export const ModelRoleSchema = z.enum([
-  'analyst',
-  'engine',
-  'mediator',
-  'inspector',
-]);
+export const ModelRoleSchema = z.enum(["analyst", "engine", "mediator", "inspector"]);
 
-export const LocalitySchema = z.enum(['local', 'remote']);
+export const LocalitySchema = z.enum(["local", "remote"]);
 
-export const AuthBackendSchema = z.enum(['api_key', 'browser_session']);
+export const AuthBackendSchema = z.enum(["api_key", "browser_session"]);
 
 export const EngineStatusSchema = z.enum([
-  'active',
-  'unconfigured',
-  'key_invalid',
-  'needs_relogin',
-  'unreachable',
+  "active",
+  "unconfigured",
+  "key_invalid",
+  "needs_relogin",
+  "unreachable",
 ]);
 
 export const EngineDescriptorSchema = z.object({
@@ -67,7 +57,7 @@ export const RoleBindingSchema = z.object({
   bound_at: TimestampSchema,
 });
 
-export const InvokeModeSchema = z.enum(['completion', 'structured']);
+export const InvokeModeSchema = z.enum(["completion", "structured"]);
 
 export const InvokeRequestSchema = z.object({
   request_id: IdSchema,

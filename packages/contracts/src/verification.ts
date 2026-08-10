@@ -1,22 +1,22 @@
-import { z } from 'zod';
+import { z } from "zod";
 import {
   ConfidenceSchema,
   HashSchema,
   IdSchema,
   NonEmptyStringSchema,
   TimestampSchema,
-} from './primitives.js';
+} from "./primitives.js";
 
-export const VerdictSchema = z.enum(['verified', 'failed', 'inconclusive']);
+export const VerdictSchema = z.enum(["verified", "failed", "inconclusive"]);
 
 export const EvidenceKindSchema = z.enum([
-  'screenshot',
-  'ocr_text',
-  'stdout',
-  'file_hash',
-  'http_response',
-  'sql_result',
-  'window_state',
+  "screenshot",
+  "ocr_text",
+  "stdout",
+  "file_hash",
+  "http_response",
+  "sql_result",
+  "window_state",
 ]);
 
 export const EvidenceRefSchema = z.object({
@@ -35,7 +35,7 @@ export const InspectionResultSchema = z.object({
   criterion_id: IdSchema,
   task_id: IdSchema,
   verdict: VerdictSchema,
-  check_kind_used: z.enum(['deterministic', 'inspected']),
+  check_kind_used: z.enum(["deterministic", "inspected"]),
   confidence: ConfidenceSchema.nullable(),
   reasoning: z.string().nullable(),
   evidence: z.array(EvidenceRefSchema),

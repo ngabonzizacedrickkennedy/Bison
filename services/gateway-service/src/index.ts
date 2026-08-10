@@ -1,1 +1,1 @@
-export const SERVICE_NAME = 'gateway-service';
+export const SERVICE_NAME = "gateway-service";

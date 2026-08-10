@@ -23,6 +23,7 @@
   },
   "devDependencies": {
     "@bison/tsconfig": "workspace:*",
+    "@types/node": "^22.20.1",
     "rimraf": "^6.0.1",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2",

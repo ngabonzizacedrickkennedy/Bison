@@ -1,40 +1,31 @@
-import { z } from 'zod';
-import {
-  IdSchema,
-  NonEmptyStringSchema,
-  TimestampSchema,
-} from './primitives.js';
+import { z } from "zod";
+import { IdSchema, NonEmptyStringSchema, TimestampSchema } from "./primitives.js";
 
 export const IntentSchema = z.enum([
-  'chat',
-  'dev_task',
-  'automation_task',
-  'script_task',
-  'account_action',
+  "chat",
+  "dev_task",
+  "automation_task",
+  "script_task",
+  "account_action",
 ]);
 
 export const DownstreamServiceSchema = z.enum([
-  'task-runner',
-  'automation',
-  'dev-env',
-  'engine-session',
+  "task-runner",
+  "automation",
+  "dev-env",
+  "engine-session",
 ]);
 
-export const FailurePolicySchema = z.enum([
-  'abort',
-  'retry',
-  'replan',
-  'continue',
-]);
+export const FailurePolicySchema = z.enum(["abort", "retry", "replan", "continue"]);
 
 export const StepStateSchema = z.enum([
-  'pending',
-  'awaiting_confirmation',
-  'running',
-  'succeeded',
-  'failed',
-  'aborted',
-  'never_attempted',
+  "pending",
+  "awaiting_confirmation",
+  "running",
+  "succeeded",
+  "failed",
+  "aborted",
+  "never_attempted",
 ]);
 
 export const ActionStepSchema = z.object({
@@ -64,10 +55,10 @@ export const ActionPlanSchema = z.object({
 });
 
 export const HaltReasonSchema = z.enum([
-  'kill_switch',
-  'step_failure',
-  'project_switch',
-  'user_stop',
+  "kill_switch",
+  "step_failure",
+  "project_switch",
+  "user_stop",
 ]);
 
 export const HaltSignalSchema = z.object({

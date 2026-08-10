@@ -1,1 +1,1 @@
-export const SERVICE_NAME = 'dev-env-service';
+export const SERVICE_NAME = "dev-env-service";

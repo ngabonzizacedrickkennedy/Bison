@@ -1,20 +1,20 @@
-import { z } from 'zod';
-import { IdSchema, NonEmptyStringSchema, TimestampSchema } from './primitives.js';
+import { z } from "zod";
+import { IdSchema, NonEmptyStringSchema, TimestampSchema } from "./primitives.js";
 
 export const LiveEventTypeSchema = z.enum([
-  'message',
-  'plan_created',
-  'step_state_changed',
-  'confirmation_required',
-  'script_output',
-  'window_state',
-  'automation_action',
-  'narration',
-  'criterion_settled',
-  'progress_updated',
-  'clarification_required',
-  'halt',
-  'error',
+  "message",
+  "plan_created",
+  "step_state_changed",
+  "confirmation_required",
+  "script_output",
+  "window_state",
+  "automation_action",
+  "narration",
+  "criterion_settled",
+  "progress_updated",
+  "clarification_required",
+  "halt",
+  "error",
 ]);
 
 export const LiveEventSchema = z.object({
@@ -29,7 +29,7 @@ export const LiveEventSchema = z.object({
   emitted_at: TimestampSchema,
 });
 
-export const MessageRoleSchema = z.enum(['user', 'assistant', 'system']);
+export const MessageRoleSchema = z.enum(["user", "assistant", "system"]);
 
 export const MessageSchema = z.object({
   id: IdSchema,
@@ -42,13 +42,13 @@ export const MessageSchema = z.object({
 });
 
 export const ExecutionLogKindSchema = z.enum([
-  'task_transition',
-  'step_transition',
-  'model_decision',
-  'criterion_verdict',
-  'secret_release',
-  'halt',
-  'user_action',
+  "task_transition",
+  "step_transition",
+  "model_decision",
+  "criterion_verdict",
+  "secret_release",
+  "halt",
+  "user_action",
 ]);
 
 export const ExecutionLogEntrySchema = z.object({

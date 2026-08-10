@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 import {
   ConfidenceSchema,
   HashSchema,
@@ -6,28 +6,17 @@ import {
   NonEmptyStringSchema,
   TimestampSchema,
   UrlSchema,
-} from './primitives.js';
+} from "./primitives.js";
 
-export const ProjectStateSchema = z.enum([
-  'draft',
-  'active',
-  'paused',
-  'archived',
-]);
+export const ProjectStateSchema = z.enum(["draft", "active", "paused", "archived"]);
 
-export const ProjectTypeSchema = z.enum([
-  'code',
-  'automation',
-  'research',
-  'real_world',
-  'mixed',
-]);
+export const ProjectTypeSchema = z.enum(["code", "automation", "research", "real_world", "mixed"]);
 
 export const SensitivityFlagSchema = z.enum([
-  'credentialed',
-  'destructive',
-  'financial',
-  'public_facing',
+  "credentialed",
+  "destructive",
+  "financial",
+  "public_facing",
 ]);
 
 export const ProjectSchema = z.object({
@@ -48,7 +37,7 @@ export const ProjectSchema = z.object({
   archived_at: TimestampSchema.nullable(),
 });
 
-export const MaterialKindSchema = z.enum(['folder', 'file', 'image', 'link']);
+export const MaterialKindSchema = z.enum(["folder", "file", "image", "link"]);
 
 export const ProjectMaterialSchema = z.object({
   id: IdSchema,
@@ -96,11 +85,11 @@ export const UploadScanSchema = z.object({
 });
 
 export const ConceiveBlockKindSchema = z.enum([
-  'markdown',
-  'image',
-  'link',
-  'project_ref',
-  'file_ref',
+  "markdown",
+  "image",
+  "link",
+  "project_ref",
+  "file_ref",
 ]);
 
 export const ConceiveBlockSchema = z.object({

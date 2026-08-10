@@ -1,21 +1,14 @@
-import { z } from 'zod';
+import { z } from "zod";
 import {
   ConfidenceSchema,
   IdSchema,
   NonEmptyStringSchema,
   TimestampSchema,
   UrlSchema,
-} from './primitives.js';
-import { ProjectTypeSchema } from './project.js';
+} from "./primitives.js";
+import { ProjectTypeSchema } from "./project.js";
 
-export const AnswerKindSchema = z.enum([
-  'text',
-  'choice',
-  'file',
-  'image',
-  'link',
-  'confirm',
-]);
+export const AnswerKindSchema = z.enum(["text", "choice", "file", "image", "link", "confirm"]);
 
 export const ProjectBriefSchema = z.object({
   id: IdSchema,
@@ -59,7 +52,7 @@ export const ClarificationRequestSchema = z.object({
 
 export const ClarificationAttachmentSchema = z.object({
   id: IdSchema,
-  kind: z.enum(['file', 'image', 'link']),
+  kind: z.enum(["file", "image", "link"]),
   path: z.string().nullable(),
   url: UrlSchema.nullable(),
   caption: z.string().nullable(),

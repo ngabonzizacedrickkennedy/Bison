@@ -1,1 +1,1 @@
-export const SERVICE_NAME = 'bootstrap-service';
+export const SERVICE_NAME = "bootstrap-service";

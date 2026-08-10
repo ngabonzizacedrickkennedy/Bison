@@ -1,0 +1,11 @@
+{
+  "name": "@bison/contracts-py",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "codegen": "uv run python generate.py"
+  },
+  "devDependencies": {
+    "@bison/contracts": "workspace:*"
+  }
+}

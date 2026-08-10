@@ -1,0 +1,13 @@
+node_modules/
+dist/
+generated/
+.turbo/
+.venv/
+Python/
+__pycache__/
+
+packages/contracts/prompts/
+packages/contracts-py/src/bison_contracts/models.py
+
+pnpm-lock.yaml
+uv.lock

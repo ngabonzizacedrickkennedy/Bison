@@ -1,9 +1,23 @@
 * text=auto eol=lf
+
 *.ps1 text eol=crlf
+*.psm1 text eol=crlf
 *.cmd text eol=crlf
 *.bat text eol=crlf
+
+packages/contracts/prompts/*.md text eol=lf
+
 *.png binary
 *.jpg binary
+*.jpeg binary
+*.gif binary
 *.ico binary
-*.7z binary
+*.webp binary
+*.pdf binary
 *.zip binary
+*.exe binary
+*.dll binary
+*.gguf binary
+
+pnpm-lock.yaml linguist-generated=true -diff
+uv.lock linguist-generated=true -diff
