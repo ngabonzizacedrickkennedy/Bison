@@ -11,6 +11,8 @@ out/
 build/
 generated/
 packages/contracts-py/src/bison_contracts/models.py
+packages/contracts-py/src/bison_contracts/__init__.py
+packages/contracts-py/src/bison_contracts/prompts/
 .turbo/
 *.db
 *.sqlite

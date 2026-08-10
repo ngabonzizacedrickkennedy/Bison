@@ -47,6 +47,9 @@ jobs:
       - name: Generate contracts
         run: pnpm codegen
 
+      - name: Check prompt hashes
+        run: pnpm check:prompts
+
       - name: Build
         run: pnpm build
 

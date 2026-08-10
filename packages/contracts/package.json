@@ -16,6 +16,7 @@
     "build": "tsc --build && pnpm run generate:schema",
     "generate:schema": "tsx scripts/generate-json-schema.ts",
     "typecheck": "tsc --noEmit",
+    "check:prompts": "tsx scripts/check-prompt-hashes.ts",
     "clean": "rimraf dist generated .turbo tsconfig.tsbuildinfo"
   },
   "dependencies": {

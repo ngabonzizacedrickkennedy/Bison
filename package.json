@@ -9,6 +9,7 @@
   "scripts": {
     "prepare": "husky",
     "codegen": "turbo run codegen",
+    "check:prompts": "pnpm --filter @bison/contracts check:prompts",
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
@@ -18,7 +19,7 @@
     "py:lint": "node scripts/py.mjs lint",
     "py:typecheck": "node scripts/py.mjs typecheck",
     "py:test": "node scripts/py.mjs test",
-    "verify": "pnpm codegen && pnpm build && pnpm typecheck && pnpm test && pnpm format:check && pnpm py:sync && pnpm py:lint && pnpm py:typecheck && pnpm py:test"
+    "verify": "pnpm codegen && pnpm check:prompts && pnpm build && pnpm typecheck && pnpm test && pnpm format:check && pnpm py:sync && pnpm py:lint && pnpm py:typecheck && pnpm py:test"
   },
   "devDependencies": {
     "husky": "^9.1.7",
