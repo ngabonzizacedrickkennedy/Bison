@@ -1,0 +1,121 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #111111;
+  color: #e6e6e6;
+}
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-bottom: 1px solid #262626;
+  font-size: 13px;
+  color: #8a8a8a;
+}
+
+.indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #6a6a6a;
+}
+
+.indicator.open {
+  background: #3fb950;
+}
+
+.indicator.connecting {
+  background: #d29922;
+}
+
+.indicator.closed {
+  background: #f85149;
+}
+
+.stream {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.entry {
+  display: grid;
+  grid-template-columns: 48px 180px 1fr;
+  gap: 12px;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.entry .sequence {
+  color: #6a6a6a;
+  text-align: right;
+}
+
+.entry .type {
+  color: #79c0ff;
+}
+
+.entry .request {
+  color: #6a6a6a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer {
+  display: flex;
+  gap: 12px;
+  padding: 16px 20px;
+  border-top: 1px solid #262626;
+}
+
+.composer input {
+  flex: 1;
+  padding: 10px 14px;
+  border: 1px solid #303030;
+  border-radius: 6px;
+  background: #1a1a1a;
+  color: inherit;
+  font-size: 14px;
+  outline: none;
+}
+
+.composer input:focus {
+  border-color: #4a4a4a;
+}
+
+.composer button {
+  padding: 10px 22px;
+  border: none;
+  border-radius: 6px;
+  background: #2f6feb;
+  color: #ffffff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.composer button:disabled {
+  background: #262626;
+  color: #6a6a6a;
+  cursor: not-allowed;
+}

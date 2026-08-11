@@ -26,3 +26,6 @@ evidence/
 Thumbs.db
 *.log
 *.tsbuildinfo
+apps/desktop/dist/
+apps/desktop/dist-electron/
+apps/desktop/release/

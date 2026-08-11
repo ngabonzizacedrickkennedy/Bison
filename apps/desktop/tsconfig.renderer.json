@@ -1,0 +1,14 @@
+{
+  "extends": "@bison/tsconfig/base.json",
+  "compilerOptions": {
+    "composite": true,
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "types": [],
+    "noEmit": true,
+    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.renderer.tsbuildinfo"
+  },
+  "include": ["src", "vite.config.ts"]
+}
