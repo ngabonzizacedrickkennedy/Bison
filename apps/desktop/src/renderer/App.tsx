@@ -1,10 +1,18 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useGateway } from "./useGateway";
 import "./styles.css";
 
 export function App() {
-  const { state, events, send } = useGateway(window.bison.gatewayWebSocketUrl);
+  const { state, historyState, messages, send } = useGateway(
+    window.bison.gatewayWebSocketUrl,
+    window.bison.gatewayHttpUrl,
+  );
   const [draft, setDraft] = useState("");
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ block: "end" });
+  }, [messages]);
 
   const submit = (submitEvent: FormEvent) => {
     submitEvent.preventDefault();
@@ -22,17 +30,24 @@ export function App() {
       <div className="status">
         <span className={`indicator ${state}`} />
         <span>{state}</span>
-        <span>{window.bison.gatewayWebSocketUrl}</span>
+        <span className="detail">
+          {historyState === "loading" && "loading history"}
+          {historyState === "failed" && "history unavailable"}
+          {historyState === "ready" && `${messages.length} messages`}
+        </span>
       </div>
 
       <div className="stream">
-        {events.map((event) => (
-          <div className="entry" key={`${event.request_id}-${event.sequence}`}>
-            <span className="sequence">{event.sequence}</span>
-            <span className="type">{event.type}</span>
-            <span className="request">{event.request_id}</span>
+        {messages.map((message) => (
+          <div className="message" key={message.id}>
+            <div className="meta">
+              <span className="role">{message.role}</span>
+              <span className="time">{new Date(message.created_at).toLocaleTimeString()}</span>
+            </div>
+            <div className="content">{message.content}</div>
           </div>
         ))}
+        <div ref={bottomRef} />
       </div>
 
       <form className="composer" onSubmit={submit}>

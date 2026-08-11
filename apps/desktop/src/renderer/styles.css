@@ -57,29 +57,38 @@ body {
   gap: 6px;
 }
 
-.entry {
-  display: grid;
-  grid-template-columns: 48px 180px 1fr;
-  gap: 12px;
-  font-family: "Cascadia Mono", Consolas, monospace;
-  font-size: 13px;
-  line-height: 1.6;
+.status .detail {
+  margin-left: auto;
 }
 
-.entry .sequence {
+.message {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+  border: 1px solid #262626;
+  border-radius: 8px;
+  background: #171717;
+  max-width: 720px;
+}
+
+.message .meta {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   color: #6a6a6a;
-  text-align: right;
 }
 
-.entry .type {
+.message .role {
   color: #79c0ff;
 }
 
-.entry .request {
-  color: #6a6a6a;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.message .content {
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
 }
 
 .composer {
