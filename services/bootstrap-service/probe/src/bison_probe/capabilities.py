@@ -4,12 +4,15 @@ import socket
 import sqlite3
 import struct
 import tempfile
+import time
 from pathlib import Path
 
 POSTGRES_PROTOCOL_VERSION = 196608
 SOCKET_TIMEOUT_SECONDS = 1.5
 INJECTION_DELAY_MS = 400
 INJECTION_INTERVAL_SECONDS = 0.01
+INJECTION_ATTEMPTS = 5
+INJECTION_SETTLE_SECONDS = 0.35
 
 
 def _sqlite_round_trips() -> bool:
@@ -64,7 +67,7 @@ def _input_injection() -> tuple[bool, bool]:
         return (False, False)
 
     expected = secrets.token_hex(6)
-    captured = {"value": ""}
+    captured = {"verified": False}
 
     try:
         root = tkinter.Tk()
@@ -78,23 +81,39 @@ def _input_injection() -> tuple[bool, bool]:
     entry = tkinter.Entry(root, width=40)
     entry.pack(padx=12, pady=24)
 
+    def attempt() -> bool:
+        root.lift()
+        root.focus_force()
+        entry.focus_force()
+        root.update()
+        time.sleep(INJECTION_SETTLE_SECONDS)
+        root.update()
+
+        if root.focus_get() is not entry:
+            return False
+
+        entry.delete(0, "end")
+        root.update()
+        pyautogui.write(expected, interval=INJECTION_INTERVAL_SECONDS)
+        root.update()
+
+        return entry.get() == expected
+
     def inject() -> None:
         try:
-            root.focus_force()
-            entry.focus_set()
-            root.update()
-            pyautogui.write(expected, interval=INJECTION_INTERVAL_SECONDS)
-            root.update()
-            captured["value"] = entry.get()
+            for _ in range(INJECTION_ATTEMPTS):
+                if attempt():
+                    captured["verified"] = True
+                    return
         except Exception:
-            captured["value"] = ""
+            captured["verified"] = False
         finally:
             root.destroy()
 
     root.after(INJECTION_DELAY_MS, inject)
     root.mainloop()
 
-    return (True, captured["value"] == expected)
+    return (True, captured["verified"])
 
 
 def run_probes() -> dict[str, bool]:

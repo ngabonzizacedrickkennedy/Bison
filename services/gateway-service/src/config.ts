@@ -27,5 +27,6 @@ export const config = {
   port: intFromEnv("BISON_GATEWAY_PORT", 8000),
   host: process.env.BISON_GATEWAY_HOST ?? "127.0.0.1",
   taskStoreUrl: urlFromEnv("BISON_TASK_STORE_URL", "http://127.0.0.1:8100"),
+  bootstrapUrl: urlFromEnv("BISON_BOOTSTRAP_URL", "http://127.0.0.1:8200"),
   userId: process.env.BISON_USER_ID ?? "local",
 } as const;

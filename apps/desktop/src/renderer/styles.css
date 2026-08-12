@@ -128,3 +128,50 @@ body {
   color: #6a6a6a;
   cursor: not-allowed;
 }
+
+.capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #26262b;
+  font-size: 11px;
+}
+
+.capability {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid #2f2f36;
+  border-radius: 3px;
+}
+
+.capability .name {
+  color: #8a8a94;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+
+.capability.on .backend {
+  color: #6cc07a;
+}
+
+.capability.degraded .backend {
+  color: #d8a24a;
+}
+
+.capability.off {
+  border-color: #4a2c2c;
+}
+
+.capability.off .backend {
+  color: #d76a6a;
+}
+
+.capabilities .budget {
+  margin-left: auto;
+  color: #6f6f78;
+}

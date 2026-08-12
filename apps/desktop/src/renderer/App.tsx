@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { CapabilityBar } from "./CapabilityBar";
+import { useCapabilities } from "./useCapabilities";
 import { useGateway } from "./useGateway";
 import "./styles.css";
 
@@ -7,6 +9,7 @@ export function App() {
     window.bison.gatewayWebSocketUrl,
     window.bison.gatewayHttpUrl,
   );
+  const { manifestState, manifest } = useCapabilities(window.bison.gatewayHttpUrl);
   const [draft, setDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -36,6 +39,8 @@ export function App() {
           {historyState === "ready" && `${messages.length} messages`}
         </span>
       </div>
+
+      <CapabilityBar manifestState={manifestState} manifest={manifest} />
 
       <div className="stream">
         {messages.map((message) => (

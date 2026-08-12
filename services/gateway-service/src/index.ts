@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import websocket from "@fastify/websocket";
 import Fastify from "fastify";
+import { bootstrapHealthy, fetchManifest } from "./bootstrap-client.js";
 import { config } from "./config.js";
 import { listMessages, persistMessage, taskStoreHealthy } from "./task-store-client.js";
 
@@ -43,9 +44,19 @@ export function buildServer() {
     service: SERVICE_NAME,
     status: "ok",
     task_store: (await taskStoreHealthy()) ? "ok" : "unreachable",
+    bootstrap: (await bootstrapHealthy()) ? "ok" : "unreachable",
   }));
 
   app.get("/messages", async () => listMessages());
+
+  app.get("/manifest", async (_request, reply) => {
+    try {
+      return await fetchManifest();
+    } catch (error) {
+      app.log.error({ err: error }, "manifest unavailable");
+      return reply.status(503).send({ error: "capability manifest unavailable" });
+    }
+  });
 
   app.register(async (instance) => {
     instance.get("/ws", { websocket: true }, (socket) => {
