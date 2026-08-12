@@ -1,6 +1,11 @@
 import Fastify from "fastify";
 import { config } from "./config.js";
 import { MINIMUM_RAM_GB, meetsMinimumRam, probeHardware } from "./hardware.js";
+import { probeCache } from "./probes/cache.js";
+import { probeDatabase } from "./probes/database.js";
+import { probeInputInjection } from "./probes/input-injection.js";
+import { probeOcr } from "./probes/ocr.js";
+import { probeScreenCapture } from "./probes/screen-capture.js";
 import { probeSandbox } from "./probes/sandbox.js";
 import { probeSecrets } from "./probes/secrets.js";
 
@@ -26,9 +31,26 @@ export function buildServer() {
   });
 
   app.get("/capabilities", async () => {
-    const [sandbox, secrets] = await Promise.all([probeSandbox(), probeSecrets()]);
+    const [sandbox, secrets, ocr, database, cache, inputInjection, screenCapture] =
+      await Promise.all([
+        probeSandbox(),
+        probeSecrets(),
+        probeOcr(),
+        probeDatabase(),
+        probeCache(),
+        probeInputInjection(),
+        probeScreenCapture(),
+      ]);
 
-    return { sandbox, secrets };
+    return {
+      sandbox,
+      secrets,
+      ocr,
+      database,
+      cache,
+      input_injection: inputInjection,
+      screen_capture: screenCapture,
+    };
   });
 
   return app;

@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { resolveDataDir } from "./paths.js";
 
 function intFromEnv(name: string, fallback: number): number {
@@ -12,8 +13,16 @@ function intFromEnv(name: string, fallback: number): number {
   return parsed;
 }
 
+const dataDir = resolveDataDir();
+
 export const config = {
   port: intFromEnv("BISON_BOOTSTRAP_PORT", 8200),
   host: process.env.BISON_BOOTSTRAP_HOST ?? "127.0.0.1",
-  dataDir: resolveDataDir(),
+  dataDir,
+  tesseractPath:
+    process.env.BISON_TESSERACT_PATH ?? join(dataDir, "vendor", "tesseract", "tesseract.exe"),
+  redisHost: process.env.BISON_REDIS_HOST ?? "127.0.0.1",
+  redisPort: intFromEnv("BISON_REDIS_PORT", 6379),
+  postgresHost: process.env.BISON_POSTGRES_HOST ?? "127.0.0.1",
+  postgresPort: intFromEnv("BISON_POSTGRES_PORT", 5432),
 } as const;
