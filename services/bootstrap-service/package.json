@@ -6,11 +6,13 @@
   "main": "./dist/index.js",
   "scripts": {
     "build": "tsc --build",
+    "dev": "node --watch dist/index.js",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist .turbo tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@bison/contracts": "workspace:*"
+    "@bison/contracts": "workspace:*",
+    "fastify": "^5.2.0"
   },
   "devDependencies": {
     "@bison/tsconfig": "workspace:*",
