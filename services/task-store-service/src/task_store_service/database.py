@@ -33,6 +33,23 @@ def database_url() -> str:
     return f"sqlite+aiosqlite:///{database_path()}"
 
 
+SUPPORTED_DATABASE_BACKENDS = frozenset({"sqlite"})
+
+
+class UnsupportedBackendError(RuntimeError):
+    pass
+
+
+def bind_database(backend: str | None) -> str:
+    if backend not in SUPPORTED_DATABASE_BACKENDS:
+        raise UnsupportedBackendError(
+            f"capability manifest selected database backend {backend!r}, "
+            f"but this service implements {sorted(SUPPORTED_DATABASE_BACKENDS)}"
+        )
+
+    return database_url()
+
+
 _engine: AsyncEngine | None = None
 _session_factory: async_sessionmaker[AsyncSession] | None = None
 
@@ -49,6 +66,12 @@ def session_factory() -> async_sessionmaker[AsyncSession]:
     if _session_factory is None:
         _session_factory = async_sessionmaker(engine(), expire_on_commit=False)
     return _session_factory
+
+
+def configure_engine(url: str) -> None:
+    global _engine, _session_factory
+    _engine = create_async_engine(url, echo=False, future=True)
+    _session_factory = async_sessionmaker(_engine, expire_on_commit=False)
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:

@@ -10,7 +10,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from task_store_service.database import dispose, get_session
+from task_store_service.database import bind_database, configure_engine, dispose, get_session
+from task_store_service.manifest import load_manifest
 from task_store_service.models import ExecutionLog, Message
 
 SERVICE_NAME = "task-store-service"
@@ -35,10 +36,15 @@ class MessageRead(BaseModel):
 class Health(BaseModel):
     service: str
     status: Literal["ok"]
+    database_backend: str
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    manifest = load_manifest()
+    backend = manifest.database.backend
+    configure_engine(bind_database(backend))
+    app.state.database_backend = backend
     yield
     await dispose()
 
@@ -50,7 +56,11 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 @app.get("/health")
 async def health() -> Health:
-    return Health(service=SERVICE_NAME, status="ok")
+    return Health(
+        service=SERVICE_NAME,
+        status="ok",
+        database_backend=app.state.database_backend,
+    )
 
 
 @app.post("/messages", status_code=201)
