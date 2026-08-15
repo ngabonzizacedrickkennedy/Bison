@@ -4,11 +4,12 @@ import asyncio
 from logging.config import fileConfig
 
 from alembic import context
-from model_broker_service.database import bind_database
-from model_broker_service.models import Base
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlalchemy.pool import NullPool
+
+from model_broker_service.database import bind_database
+from model_broker_service.models import Base
 
 config = context.config
 

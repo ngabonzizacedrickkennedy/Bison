@@ -5,3 +5,18 @@ extend-exclude = ["**/migrations/versions"]
 [lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM", "ASYNC", "S", "RUF"]
 ignore = ["S101"]
+
+[lint.isort]
+known-first-party = [
+    "bison_contracts",
+    "model_broker_service",
+    "task_store_service",
+    "analyst_service",
+    "automation_service",
+    "inspector_service",
+    "mediator_service",
+    "project_service",
+    "router_service",
+    "screen_observer_service",
+    "task_runner_service",
+]
