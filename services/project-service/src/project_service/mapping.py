@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from bison_contracts import Project
+
 from project_service.models import ProjectRow
 
 

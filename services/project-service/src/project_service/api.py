@@ -5,12 +5,12 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from typing import Annotated, Literal
 
+from bison_contracts import Project
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bison_contracts import Project
 from project_service import projects, tasks
 from project_service.config import settings
 from project_service.database import bind_database, configure_engine, dispose, get_session

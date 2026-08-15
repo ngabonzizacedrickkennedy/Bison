@@ -8,7 +8,6 @@ ignore = ["S101"]
 
 [lint.isort]
 known-first-party = [
-    "bison_contracts",
     "model_broker_service",
     "task_store_service",
     "analyst_service",

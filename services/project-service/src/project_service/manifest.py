@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from bison_contracts import CapabilityManifest
+
 from project_service.database import data_dir
 
 
