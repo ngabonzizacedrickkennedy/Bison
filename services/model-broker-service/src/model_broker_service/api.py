@@ -1,18 +1,23 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Annotated, Any, Literal
 from uuid import uuid4
 
 from bison_contracts import CatalogEntry, InvokeRequest, InvokeResponse, ModelDescriptor
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from model_broker_service import diskguard
 from model_broker_service.backends import (
+    BackendError,
     BackendTimeoutError,
     BackendUnavailableError,
     CircuitBrokenBackend,
@@ -26,11 +31,16 @@ from model_broker_service.catalog import (
     OpenRouterSource,
 )
 from model_broker_service.config import settings
+from model_broker_service.database import bind_database, configure_engine, dispose, get_session
+from model_broker_service.diskguard import DiskVerdict
 from model_broker_service.manifest import load_manifest
+from model_broker_service.registry import ROLES, Role, RoleRegistry
 
 SERVICE_NAME = "model-broker-service"
 
 logger = logging.getLogger(SERVICE_NAME)
+
+SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
 class InvokeBody(BaseModel):
@@ -57,6 +67,32 @@ class CatalogStatus(BaseModel):
     entries: int
     indexed_at: datetime | None
     sources: list[str]
+
+
+class BindBody(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    model_id: str = Field(min_length=1)
+    engine_id: str | None = None
+
+
+class BindingRead(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    id: str
+    project_id: str
+    role: str
+    model_id: str
+    engine_id: str | None
+    locality: str
+    prompt_version: str
+    bound_at: datetime
+
+
+class BudgetRead(BaseModel):
+    budget_gb: float
+    used_gb: float
+    headroom_gb: float
 
 
 def build_broker() -> ModelBroker:
@@ -118,6 +154,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     resolved = settings()
     manifest = load_manifest()
 
+    configure_engine(bind_database(manifest.database.backend))
+    app.state.local_model_gb = manifest.budgets.local_model_gb
+
     catalog = build_catalog()
     await catalog.load()
 
@@ -136,6 +175,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await app.state.refresher
 
     await app.state.broker.close()
+    await dispose()
 
 
 app = FastAPI(title=SERVICE_NAME, lifespan=lifespan)
@@ -229,3 +269,109 @@ async def catalog_refresh() -> CatalogStatus:
         indexed_at=catalog.indexed_at,
         sources=["ollama", "openrouter"],
     )
+
+
+async def installed_sizes() -> list[float]:
+    broker: ModelBroker = app.state.broker
+
+    return [
+        model.size_gb
+        for model in await broker.list_models()
+        if model.locality == "local" and model.size_gb is not None
+    ]
+
+
+@app.get("/budget")
+async def budget() -> BudgetRead:
+    budget_gb: float = app.state.local_model_gb
+    used_gb = round(sum(await installed_sizes()), 2)
+
+    return BudgetRead(
+        budget_gb=budget_gb,
+        used_gb=used_gb,
+        headroom_gb=round(budget_gb - used_gb, 2),
+    )
+
+
+@app.get("/projects/{project_id}/bindings")
+async def list_bindings(project_id: str, session: SessionDep) -> list[BindingRead]:
+    rows = await RoleRegistry(session).list_bindings(project_id)
+    return [BindingRead.model_validate(row, from_attributes=True) for row in rows]
+
+
+@app.put("/projects/{project_id}/bindings/{role}")
+async def bind_role(
+    project_id: str,
+    role: Role,
+    body: BindBody,
+    session: SessionDep,
+) -> BindingRead:
+    if role not in ROLES:
+        raise HTTPException(status_code=404, detail=f"unknown role {role}")
+
+    catalog: CatalogIndex = app.state.catalog
+    record = catalog.get(body.model_id)
+
+    if record is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"{body.model_id} is not in the catalog index",
+        )
+
+    row = await RoleRegistry(session).bind(
+        project_id,
+        role,
+        body.model_id,
+        record.locality,
+        body.engine_id,
+    )
+
+    return BindingRead.model_validate(row, from_attributes=True)
+
+
+@app.post("/models/pull/{model_id:path}")
+async def pull_model(model_id: str) -> StreamingResponse:
+    broker: ModelBroker = app.state.broker
+    catalog: CatalogIndex = app.state.catalog
+    record = catalog.get(model_id)
+
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"{model_id} is not in the catalog index")
+
+    if record.locality != "local":
+        raise HTTPException(status_code=400, detail=f"{model_id} is remote and needs no pull")
+
+    verdict = diskguard.evaluate(
+        app.state.local_model_gb,
+        await installed_sizes(),
+        record.size_gb,
+    )
+
+    if not verdict.allowed:
+        raise HTTPException(status_code=409, detail=verdict_detail(verdict))
+
+    return StreamingResponse(stream_pull(broker, model_id), media_type="application/x-ndjson")
+
+
+def verdict_detail(verdict: DiskVerdict) -> dict[str, Any]:
+    return {
+        "reason": verdict.reason,
+        "budget_gb": verdict.budget_gb,
+        "used_gb": verdict.used_gb,
+        "incoming_gb": verdict.incoming_gb,
+    }
+
+
+async def stream_pull(broker: ModelBroker, model_id: str) -> AsyncIterator[str]:
+    try:
+        async for progress in broker.pull(model_id):
+            payload = json.dumps(
+                {
+                    "status": progress.status,
+                    "completed_bytes": progress.completed_bytes,
+                    "total_bytes": progress.total_bytes,
+                }
+            )
+            yield f"{payload}\n"
+    except BackendError as error:
+        yield f"{json.dumps({'status': 'error', 'error': str(error)})}\n"

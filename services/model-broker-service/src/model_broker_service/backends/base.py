@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Literal
 
@@ -30,6 +31,13 @@ class BackendTimeoutError(BackendError):
     pass
 
 
+@dataclass(frozen=True, slots=True)
+class PullProgress:
+    status: str
+    completed_bytes: int | None
+    total_bytes: int | None
+
+
 class ModelBackend(ABC):
     name: str
     locality: Locality
@@ -49,6 +57,9 @@ class ModelBackend(ABC):
         structured: bool,
         timeout_seconds: float,
     ) -> str: ...
+
+    @abstractmethod
+    def pull(self, model_id: str) -> AsyncIterator[PullProgress]: ...
 
     @abstractmethod
     async def close(self) -> None: ...

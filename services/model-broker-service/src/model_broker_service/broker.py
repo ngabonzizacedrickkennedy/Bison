@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from enum import Enum
 from time import perf_counter
@@ -11,6 +12,7 @@ from model_broker_service.backends import (
     BackendError,
     BackendModel,
     ModelBackend,
+    PullProgress,
 )
 from model_broker_service.cache import TtlCache
 
@@ -115,6 +117,19 @@ class ModelBroker:
             )
 
         raise last_error if last_error is not None else ModelNotFoundError(request.model_id)
+
+    async def pull(self, model_id: str) -> AsyncIterator[PullProgress]:
+        for backend in self._backends:
+            if backend.locality != "local":
+                continue
+
+            async for progress in backend.pull(model_id):
+                yield progress
+
+            self._models.invalidate(backend.name)
+            return
+
+        raise ModelNotFoundError(model_id)
 
     async def close(self) -> None:
         for backend in self._backends:

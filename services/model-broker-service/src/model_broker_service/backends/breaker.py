@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from enum import Enum
 from time import monotonic
 
@@ -9,6 +9,7 @@ from model_broker_service.backends.base import (
     BackendModel,
     BackendUnavailableError,
     ModelBackend,
+    PullProgress,
 )
 
 
@@ -117,6 +118,9 @@ class CircuitBrokenBackend(ModelBackend):
                 timeout_seconds=timeout_seconds,
             ),
         )
+
+    def pull(self, model_id: str) -> AsyncIterator[PullProgress]:
+        return self._inner.pull(model_id)
 
     async def close(self) -> None:
         await self._inner.close()

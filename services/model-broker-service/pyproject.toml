@@ -9,6 +9,9 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
     "httpx>=0.28.0",
+    "sqlalchemy>=2.0.36",
+    "alembic>=1.14.0",
+    "aiosqlite>=0.20.0",
 ]
 
 [build-system]
@@ -33,6 +36,7 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+extend-exclude = ["migrations/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM", "ASYNC", "S", "RUF"]

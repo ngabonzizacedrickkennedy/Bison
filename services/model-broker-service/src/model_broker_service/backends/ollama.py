@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -9,6 +11,7 @@ from model_broker_service.backends.base import (
     BackendTimeoutError,
     BackendUnavailableError,
     ModelBackend,
+    PullProgress,
 )
 
 BYTES_PER_GB = 1024**3
@@ -60,6 +63,48 @@ class OllamaBackend(ModelBackend):
 
         return response
 
+    async def pull(self, model_id: str) -> AsyncIterator[PullProgress]:
+        body = {"model": model_id, "stream": True}
+        timeout = httpx.Timeout(None, connect=self._connect_timeout)
+
+        try:
+            async with self._client.stream(
+                "POST", "/api/pull", json=body, timeout=timeout
+            ) as response:
+                if response.status_code >= httpx.codes.BAD_REQUEST:
+                    raise BackendUnavailableError(
+                        self.name, f"/api/pull responded {response.status_code}"
+                    )
+
+                async for line in response.aiter_lines():
+                    if not line.strip():
+                        continue
+
+                    try:
+                        event: Any = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+
+                    if not isinstance(event, dict):
+                        continue
+
+                    error = event.get("error")
+
+                    if isinstance(error, str):
+                        raise BackendUnavailableError(self.name, error)
+
+                    yield PullProgress(
+                        status=str(event.get("status", "")),
+                        completed_bytes=self._as_int(event.get("completed")),
+                        total_bytes=self._as_int(event.get("total")),
+                    )
+        except httpx.TimeoutException as error:
+            raise BackendTimeoutError(self.name, "/api/pull stalled") from error
+        except httpx.HTTPError as error:
+            raise BackendUnavailableError(
+                self.name, f"/api/pull unreachable at {self._base_url}"
+            ) from error
+
     async def close(self) -> None:
         await self._client.aclose()
 
@@ -90,6 +135,10 @@ class OllamaBackend(ModelBackend):
             raise BackendUnavailableError(self.name, f"{path} returned a non-object body")
 
         return parsed
+
+    @staticmethod
+    def _as_int(value: Any) -> int | None:
+        return value if isinstance(value, int) else None
 
     @staticmethod
     def _describe(entry: dict[str, Any]) -> BackendModel:
