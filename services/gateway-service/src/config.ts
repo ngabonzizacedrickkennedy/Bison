@@ -28,5 +28,8 @@ export const config = {
   host: process.env.BISON_GATEWAY_HOST ?? "127.0.0.1",
   taskStoreUrl: urlFromEnv("BISON_TASK_STORE_URL", "http://127.0.0.1:8100"),
   bootstrapUrl: urlFromEnv("BISON_BOOTSTRAP_URL", "http://127.0.0.1:8200"),
+  brokerUrl: urlFromEnv("BISON_MODEL_BROKER_URL", "http://127.0.0.1:8300"),
+  projectId: process.env.BISON_PROJECT_ID ?? "local",
+  invokeTimeoutMs: intFromEnv("BISON_INVOKE_TIMEOUT_MS", 120000),
   userId: process.env.BISON_USER_ID ?? "local",
 } as const;

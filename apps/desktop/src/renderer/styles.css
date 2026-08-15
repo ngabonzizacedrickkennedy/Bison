@@ -175,3 +175,283 @@ body {
   margin-left: auto;
   color: #6f6f78;
 }
+
+.activity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 20px;
+  border-top: 1px solid #26262b;
+  font-size: 12px;
+}
+
+.activity .label {
+  color: #b4b4bd;
+}
+
+.activity .locality,
+.activity .elapsed {
+  color: #6f6f78;
+  font-variant-numeric: tabular-nums;
+}
+
+.activity .elapsed {
+  margin-left: auto;
+}
+
+.activity .pulse {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #79c0ff;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.activity.answered .label {
+  color: #6cc07a;
+}
+
+.activity.failed .label {
+  color: #d76a6a;
+}
+
+.composer input:disabled {
+  color: #6a6a6a;
+  cursor: not-allowed;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #26262b;
+  font-size: 11px;
+  color: #6f6f78;
+}
+
+.role-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid #2f2f36;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.role-chip:hover {
+  border-color: #4a4a54;
+}
+
+.role-name {
+  color: #8a8a94;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 10px;
+}
+
+.role-model.local {
+  color: #6cc07a;
+}
+
+.role-model.remote {
+  color: #79c0ff;
+}
+
+.role-model.unbound {
+  color: #d76a6a;
+}
+
+.picker {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 8, 10, 0.72);
+}
+
+.picker-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(640px, 90vw);
+  max-height: 70vh;
+  padding: 20px;
+  border: 1px solid #2f2f36;
+  border-radius: 10px;
+  background: #16161a;
+}
+
+.picker-head {
+  display: flex;
+  align-items: center;
+}
+
+.picker-role {
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 11px;
+  color: #8a8a94;
+}
+
+.picker-close {
+  margin-left: auto;
+  padding: 4px 10px;
+  border: 1px solid #2f2f36;
+  border-radius: 4px;
+  background: transparent;
+  color: #8a8a94;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.picker-search {
+  padding: 10px 14px;
+  border: 1px solid #303038;
+  border-radius: 6px;
+  background: #1a1a1f;
+  color: inherit;
+  font-size: 14px;
+  outline: none;
+}
+
+.picker-search:focus {
+  border-color: #4a4a54;
+}
+
+.picker-error {
+  padding: 8px 12px;
+  border: 1px solid #4a2c2c;
+  border-radius: 4px;
+  color: #d76a6a;
+  font-size: 12px;
+}
+
+.picker-results {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+}
+
+.picker-empty {
+  padding: 12px;
+  color: #6f6f78;
+  font-size: 12px;
+}
+
+.picker-entry {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+}
+
+.picker-entry:hover {
+  background: #1e1e24;
+}
+
+.picker-entry.bound {
+  border-color: #2f6feb;
+}
+
+.picker-choose {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.picker-choose:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.picker-id {
+  font-size: 13px;
+  color: #e6e6e6;
+}
+
+.picker-tags {
+  font-size: 11px;
+  color: #6f6f78;
+}
+
+.picker-meta {
+  font-size: 11px;
+  color: #6f6f78;
+}
+
+.picker-pull {
+  padding: 4px 10px;
+  border: 1px solid #2f2f36;
+  border-radius: 4px;
+  background: transparent;
+  color: #8a8a94;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.picker-pull:hover:enabled {
+  border-color: #2f6feb;
+  color: #79c0ff;
+}
+
+.picker-pull:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.picker-progress {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.picker-bar {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: #24242b;
+  overflow: hidden;
+}
+
+.picker-bar span {
+  display: block;
+  height: 100%;
+  background: #2f6feb;
+  transition: width 200ms linear;
+}
+
+.picker-status {
+  font-size: 11px;
+  color: #6f6f78;
+  font-variant-numeric: tabular-nums;
+}

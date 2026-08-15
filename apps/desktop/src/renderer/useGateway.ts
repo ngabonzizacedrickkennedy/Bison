@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { IDLE, readAnswered, readFailure, readInvoking, type Activity } from "./activity";
 import { GatewayConnection, type ConnectionState, type LiveEvent } from "./gateway";
 import { fetchHistory, isStoredMessage, type StoredMessage } from "./messages";
 
@@ -8,6 +9,7 @@ export interface GatewayView {
   state: ConnectionState;
   historyState: HistoryState;
   messages: StoredMessage[];
+  activity: Activity;
   send: (content: string) => boolean;
 }
 
@@ -16,6 +18,7 @@ export function useGateway(webSocketUrl: string, httpUrl: string): GatewayView {
   const [state, setState] = useState<ConnectionState>("connecting");
   const [historyState, setHistoryState] = useState<HistoryState>("loading");
   const [messages, setMessages] = useState<StoredMessage[]>([]);
+  const [activity, setActivity] = useState<Activity>(IDLE);
 
   const appendMessage = useCallback((message: StoredMessage) => {
     setMessages((current) => {
@@ -52,6 +55,27 @@ export function useGateway(webSocketUrl: string, httpUrl: string): GatewayView {
     (event: LiveEvent) => {
       if (event.type === "message.persisted" && isStoredMessage(event.payload)) {
         appendMessage(event.payload);
+        return;
+      }
+
+      if (event.type === "model.invoking") {
+        const next = readInvoking(event.payload);
+        if (next !== null) {
+          setActivity(next);
+        }
+        return;
+      }
+
+      if (event.type === "model.responded") {
+        const next = readAnswered(event.payload);
+        if (next !== null) {
+          setActivity(next);
+        }
+        return;
+      }
+
+      if (event.type === "request.failed") {
+        setActivity(readFailure(event.payload));
       }
     },
     [appendMessage],
@@ -76,5 +100,5 @@ export function useGateway(webSocketUrl: string, httpUrl: string): GatewayView {
     return connectionRef.current?.send(content) ?? false;
   }, []);
 
-  return { state, historyState, messages, send };
+  return { state, historyState, messages, activity, send };
 }
