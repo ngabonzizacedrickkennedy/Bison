@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
@@ -104,6 +105,12 @@ class UploadScanRow(Base):
     entry_points: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     secret_findings: Mapped[list[dict[str, Any]]] = mapped_column(
         JSON, nullable=False, default=list
+    )
+    skipped_directories: Mapped[list[str]] = mapped_column(
+        JSON, nullable=False, default=list, server_default=text("'[]'")
+    )
+    truncated: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=text("0")
     )
     scanned_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
@@ -218,6 +225,7 @@ class ProjectEventRow(Base):
     project_id: Mapped[str] = mapped_column(String(36), nullable=False)
     task_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     criterion_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    material_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
     event_type: Mapped[str] = mapped_column(String(48), nullable=False)
     from_state: Mapped[str | None] = mapped_column(String(24), nullable=True)
     to_state: Mapped[str | None] = mapped_column(String(24), nullable=True)

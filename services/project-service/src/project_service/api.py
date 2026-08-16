@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
-from typing import Annotated, Literal
+from datetime import UTC, datetime
+from typing import Annotated, Any, Literal
 
 from bison_contracts import Project
 from fastapi import Depends, FastAPI, Request
@@ -11,12 +11,21 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from project_service import projects, tasks
+from project_service import conceive, materials, projects, tasks
+from project_service.conceive import ConceiveReferenceError, ConceiveRevisionNotFoundError
+from project_service.conceiveblocks import DuplicateBlockIdError, InvalidBlockError
 from project_service.config import settings
 from project_service.database import bind_database, configure_engine, dispose, get_session
+from project_service.ingest import MaterialSourceInvalidError, MaterialSourceNotFoundError
 from project_service.lifecycle import IllegalTransitionError
 from project_service.manifest import load_manifest
 from project_service.mapping import aware, to_project
+from project_service.materials import (
+    MaterialNotFoundError,
+    MaterialSourceRequiredError,
+    MaterialUrlRequiredError,
+    ScanNotFoundError,
+)
 from project_service.models import ProjectEventRow
 from project_service.progress import OVERALL_ID
 from project_service.projects import ProjectCapReachedError, ProjectNotFoundError
@@ -79,6 +88,7 @@ class EventRead(BaseModel):
     project_id: str
     task_id: str | None
     criterion_id: str | None
+    material_id: str | None
     event_type: str
     from_state: str | None
     to_state: str | None
@@ -169,6 +179,59 @@ class CriterionStatusBody(BaseModel):
     actor: str = Field(default="user", max_length=16)
 
 
+MaterialKind = Literal["folder", "file", "image", "link"]
+
+
+class MaterialCreate(BaseModel):
+    kind: MaterialKind
+    source_path: str | None = None
+    url: str | None = None
+    caption: str | None = Field(default=None, max_length=200)
+    note: str | None = Field(default=None, max_length=2000)
+
+
+class MaterialRead(BaseModel):
+    id: str
+    project_id: str
+    kind: str
+    path: str | None
+    url: str | None
+    caption: str | None
+    note: str | None
+    size_bytes: int | None
+    content_hash: str | None
+
+
+class ScanRead(BaseModel):
+    material_id: str
+    total_files: int
+    total_size_bytes: int
+    file_tree: list[str]
+    languages: list[dict[str, object]]
+    dependency_manifests: list[dict[str, object]]
+    entry_points: list[str]
+    secret_findings: list[dict[str, object]]
+    skipped_directories: list[str]
+    truncated: bool
+
+
+class ConceiveSave(BaseModel):
+    blocks: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ConceiveRead(BaseModel):
+    project_id: str
+    revision_number: int
+    blocks: list[dict[str, Any]]
+    updated_at: datetime
+
+
+class RevisionSummary(BaseModel):
+    revision_number: int
+    block_count: int
+    created_at: datetime
+
+
 class ProgressRead(BaseModel):
     task_id: str
     percentage: float
@@ -197,6 +260,7 @@ def to_event(row: ProjectEventRow) -> EventRead:
         project_id=row.project_id,
         task_id=row.task_id,
         criterion_id=row.criterion_id,
+        material_id=row.material_id,
         event_type=row.event_type,
         from_state=row.from_state,
         to_state=row.to_state,
@@ -273,6 +337,72 @@ async def handle_unknown_dependency(request: Request, exc: Exception) -> JSONRes
 async def handle_parent_outside_project(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(
         status_code=422, content={"error": "parent_outside_project", "detail": str(exc)}
+    )
+
+
+@app.exception_handler(MaterialNotFoundError)
+async def handle_material_not_found(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=404, content={"error": "material_not_found", "detail": str(exc)}
+    )
+
+
+@app.exception_handler(ScanNotFoundError)
+async def handle_scan_not_found(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": "scan_not_found", "detail": str(exc)})
+
+
+@app.exception_handler(MaterialSourceNotFoundError)
+async def handle_source_not_found(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=404, content={"error": "material_source_not_found", "detail": str(exc)}
+    )
+
+
+@app.exception_handler(MaterialSourceInvalidError)
+async def handle_source_invalid(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=422, content={"error": "material_source_invalid", "detail": str(exc)}
+    )
+
+
+@app.exception_handler(MaterialSourceRequiredError)
+async def handle_source_required(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=422, content={"error": "material_source_required", "detail": str(exc)}
+    )
+
+
+@app.exception_handler(MaterialUrlRequiredError)
+async def handle_url_required(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=422, content={"error": "material_url_required", "detail": str(exc)}
+    )
+
+
+@app.exception_handler(InvalidBlockError)
+async def handle_invalid_block(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"error": "invalid_block", "detail": str(exc)})
+
+
+@app.exception_handler(DuplicateBlockIdError)
+async def handle_duplicate_block(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=422, content={"error": "duplicate_block_id", "detail": str(exc)}
+    )
+
+
+@app.exception_handler(ConceiveReferenceError)
+async def handle_conceive_reference(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=422, content={"error": "conceive_reference_invalid", "detail": str(exc)}
+    )
+
+
+@app.exception_handler(ConceiveRevisionNotFoundError)
+async def handle_revision_not_found(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=404, content={"error": "conceive_revision_not_found", "detail": str(exc)}
     )
 
 
@@ -384,6 +514,91 @@ async def move_criterion(
         session, criterion_id, payload.status, payload.reason, payload.actor
     )
     return CriterionRead.model_validate(row, from_attributes=True)
+
+
+@app.post("/projects/{project_id}/materials", status_code=201)
+async def create_material(
+    project_id: str, payload: MaterialCreate, session: SessionDep
+) -> MaterialRead:
+    row = await materials.create_material(session, project_id, payload.model_dump())
+    return MaterialRead.model_validate(row, from_attributes=True)
+
+
+@app.get("/projects/{project_id}/materials")
+async def read_materials(project_id: str, session: SessionDep) -> list[MaterialRead]:
+    await projects.get(session, project_id)
+    rows = await materials.list_materials(session, project_id)
+    return [MaterialRead.model_validate(row, from_attributes=True) for row in rows]
+
+
+@app.get("/materials/{material_id}")
+async def read_material(material_id: str, session: SessionDep) -> MaterialRead:
+    row = await materials.get_material(session, material_id)
+    return MaterialRead.model_validate(row, from_attributes=True)
+
+
+@app.delete("/materials/{material_id}", status_code=204)
+async def remove_material(material_id: str, session: SessionDep) -> None:
+    await materials.delete_material(session, material_id)
+
+
+@app.get("/materials/{material_id}/scan")
+async def read_scan(material_id: str, session: SessionDep) -> ScanRead:
+    row = await materials.get_scan(session, material_id)
+    return ScanRead.model_validate(row, from_attributes=True)
+
+
+@app.post("/materials/{material_id}/rescan")
+async def refresh_scan(material_id: str, session: SessionDep) -> ScanRead:
+    row = await materials.rescan(session, material_id)
+    return ScanRead.model_validate(row, from_attributes=True)
+
+
+def to_conceive(project_id: str, revision_number: int, row: Any) -> ConceiveRead:
+    blocks = row.blocks if row is not None else []
+    stamp = aware(row.created_at) if row is not None else None
+
+    return ConceiveRead(
+        project_id=project_id,
+        revision_number=revision_number,
+        blocks=blocks,
+        updated_at=stamp or datetime.now(UTC),
+    )
+
+
+@app.get("/projects/{project_id}/conceive")
+async def read_conceive(project_id: str, session: SessionDep) -> ConceiveRead:
+    row, latest = await conceive.current(session, project_id)
+    return to_conceive(project_id, row.current_revision_number, latest)
+
+
+@app.put("/projects/{project_id}/conceive")
+async def save_conceive(
+    project_id: str, payload: ConceiveSave, session: SessionDep
+) -> ConceiveRead:
+    row, latest = await conceive.save(session, project_id, payload.blocks)
+    return to_conceive(project_id, row.current_revision_number, latest)
+
+
+@app.get("/projects/{project_id}/conceive/revisions")
+async def read_revisions(project_id: str, session: SessionDep) -> list[RevisionSummary]:
+    await projects.get(session, project_id)
+    rows = await conceive.list_revisions(session, project_id)
+
+    return [
+        RevisionSummary(
+            revision_number=row.revision_number,
+            block_count=len(row.blocks),
+            created_at=aware(row.created_at) or datetime.now(UTC),
+        )
+        for row in rows
+    ]
+
+
+@app.get("/projects/{project_id}/conceive/revisions/{revision_number}")
+async def read_revision(project_id: str, revision_number: int, session: SessionDep) -> ConceiveRead:
+    row = await conceive.revision(session, project_id, revision_number)
+    return to_conceive(project_id, row.revision_number, row)
 
 
 @app.get("/projects/{project_id}/progress")
