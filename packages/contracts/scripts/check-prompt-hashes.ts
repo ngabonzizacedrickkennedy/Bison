@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promptRef } from "../src/prompts.js";
-import type { ModelRole } from "../src/models.js";
 
 const LOCK_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "..", "prompts", "hashes.json");
 
@@ -12,15 +11,15 @@ const drift: string[] = [];
 const missing: string[] = [];
 
 for (const [key, expected] of Object.entries(lock)) {
-  const [role, version] = key.split(".");
-  if (!role || !version) {
-    missing.push(`${key} is not in the form role.version`);
+  const [name, version] = key.split(".");
+  if (!name || !version) {
+    missing.push(`${key} is not in the form name.version`);
     continue;
   }
 
   let actual: string;
   try {
-    actual = promptRef(role as ModelRole, version).split(".")[2] ?? "";
+    actual = promptRef(name, version).split(".")[2] ?? "";
   } catch (error) {
     missing.push(`${key}: ${error instanceof Error ? error.message : String(error)}`);
     continue;

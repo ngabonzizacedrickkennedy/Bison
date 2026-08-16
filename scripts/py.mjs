@@ -15,7 +15,7 @@ const IGNORED_DIRS = new Set([
 ]);
 
 const TASKS = {
-  sync: [["sync"]],
+  sync: [["sync", "--reinstall-package", "bison-contracts", "--refresh"]],
   lint: [
     ["run", "ruff", "check", "."],
     ["run", "ruff", "format", "--check", "."],

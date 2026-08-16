@@ -4,26 +4,23 @@ import hashlib
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
-from typing import Literal
 
 PROMPT_DIR = Path(__file__).resolve().parent / "prompts"
 
 CURRENT_VERSION = "v1"
 
-ModelRole = Literal["analyst", "engine", "mediator", "inspector"]
-
 
 @dataclass(frozen=True, slots=True)
 class PromptVersion:
-    role: ModelRole
+    name: str
     version: str
     hash: str
     text: str
 
 
 @cache
-def load_prompt(role: ModelRole, version: str = CURRENT_VERSION) -> PromptVersion:
-    path = PROMPT_DIR / f"{role}.{version}.md"
+def load_prompt(name: str, version: str = CURRENT_VERSION) -> PromptVersion:
+    path = PROMPT_DIR / f"{name}.{version}.md"
 
     try:
         raw = path.read_bytes()
@@ -36,12 +33,12 @@ def load_prompt(role: ModelRole, version: str = CURRENT_VERSION) -> PromptVersio
         raise ValueError(f"Prompt at {path} is empty.")
 
     return PromptVersion(
-        role=role,
+        name=name,
         version=version,
         hash=hashlib.sha256(raw).hexdigest(),
         text=raw.decode("utf8"),
     )
 
 
-def prompt_ref(role: ModelRole, version: str = CURRENT_VERSION) -> str:
-    return f"{role}.{version}.{load_prompt(role, version).hash[:12]}"
+def prompt_ref(name: str, version: str = CURRENT_VERSION) -> str:
+    return f"{name}.{version}.{load_prompt(name, version).hash[:12]}"
