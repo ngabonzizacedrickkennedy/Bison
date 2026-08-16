@@ -54,20 +54,21 @@ export const ProjectMaterialSchema = z.object({
 
 export const LanguageCountSchema = z.object({
   language: NonEmptyStringSchema,
-  file_count: z.number().int().nonnegative(),
+  files: z.number().int().nonnegative(),
+  size_bytes: z.number().int().nonnegative(),
+  parsed: z.number().int().nonnegative(),
 });
 
 export const DependencyManifestSchema = z.object({
   path: NonEmptyStringSchema,
   ecosystem: NonEmptyStringSchema,
-  dependency_count: z.number().int().nonnegative(),
+  dependencies: z.array(z.string()),
 });
 
 export const SecretFindingSchema = z.object({
   path: NonEmptyStringSchema,
   line: z.number().int().positive(),
-  rule: NonEmptyStringSchema,
-  confidence: ConfidenceSchema,
+  kind: NonEmptyStringSchema,
 });
 
 export const UploadScanSchema = z.object({
@@ -81,6 +82,8 @@ export const UploadScanSchema = z.object({
   dependency_manifests: z.array(DependencyManifestSchema),
   entry_points: z.array(z.string()),
   secret_findings: z.array(SecretFindingSchema),
+  skipped_directories: z.array(z.string()),
+  truncated: z.boolean(),
   scanned_at: TimestampSchema,
 });
 

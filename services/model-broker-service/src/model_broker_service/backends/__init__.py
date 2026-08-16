@@ -8,6 +8,7 @@ from model_broker_service.backends.base import (
 )
 from model_broker_service.backends.breaker import BackendCircuitOpenError, CircuitBrokenBackend
 from model_broker_service.backends.ollama import OllamaBackend
+from model_broker_service.backends.openrouter import OpenRouterBackend
 
 __all__ = [
     "BackendCircuitOpenError",
@@ -18,5 +19,6 @@ __all__ = [
     "CircuitBrokenBackend",
     "ModelBackend",
     "OllamaBackend",
+    "OpenRouterBackend",
     "PullProgress",
 ]

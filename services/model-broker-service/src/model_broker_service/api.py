@@ -22,6 +22,7 @@ from model_broker_service.backends import (
     BackendUnavailableError,
     CircuitBrokenBackend,
     OllamaBackend,
+    OpenRouterBackend,
 )
 from model_broker_service.broker import ModelBroker, ModelNotFoundError
 from model_broker_service.catalog import (
@@ -95,7 +96,7 @@ class BudgetRead(BaseModel):
     headroom_gb: float
 
 
-def build_broker() -> ModelBroker:
+def build_broker(catalog: CatalogIndex) -> ModelBroker:
     resolved = settings()
 
     ollama = CircuitBrokenBackend(
@@ -104,7 +105,20 @@ def build_broker() -> ModelBroker:
         resolved.breaker_reset_seconds,
     )
 
-    return ModelBroker([ollama], resolved.local_concurrency, resolved.models_ttl_seconds)
+    openrouter = CircuitBrokenBackend(
+        OpenRouterBackend(
+            resolved.openrouter_base_url,
+            resolved.openrouter_api_key,
+            resolved.connect_timeout_seconds,
+            catalog,
+        ),
+        resolved.breaker_fail_max,
+        resolved.breaker_reset_seconds,
+    )
+
+    return ModelBroker(
+        [ollama, openrouter], resolved.local_concurrency, resolved.models_ttl_seconds
+    )
 
 
 def build_catalog() -> CatalogIndex:
@@ -161,7 +175,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await catalog.load()
 
     app.state.cache_backend = manifest.cache.backend or "none"
-    app.state.broker = build_broker()
+    app.state.broker = build_broker(catalog)
     app.state.catalog = catalog
     app.state.refresher = asyncio.create_task(
         refresh_forever(catalog, resolved.catalog_refresh_seconds)
@@ -205,7 +219,7 @@ async def list_models() -> list[ModelDescriptor]:
                 "locality": model.locality,
                 "size_gb": model.size_gb,
                 "context_window": model.context_window,
-                "installed": True,
+                "installed": model.locality == "local",
             }
         )
         for model in await broker.list_models()

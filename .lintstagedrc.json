@@ -1,7 +1,4 @@
 {
   "*.{ts,mts,cts,tsx,js,mjs,cjs,json,jsonc,md,yml,yaml}": "prettier --write",
-  "*.py": [
-    "uvx ruff check --fix --force-exclude --config ruff.toml",
-    "uvx ruff format --force-exclude --config ruff.toml"
-  ]
+  "*.py": ["uvx ruff check --fix --force-exclude", "uvx ruff format --force-exclude"]
 }

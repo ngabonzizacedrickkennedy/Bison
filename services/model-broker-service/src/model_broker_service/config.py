@@ -32,8 +32,9 @@ class Settings(BaseSettings):
     breaker_fail_max: int = 3
     breaker_reset_seconds: float = 30.0
     openrouter_base_url: str = "https://openrouter.ai"
+    openrouter_api_key: str = ""
     openrouter_free_only: bool = True
-    catalog_fetch_timeout_seconds: float = 20.0
+    catalog_fetch_timeout_seconds: float = 60.0
     catalog_refresh_seconds: float = 21600.0
 
 

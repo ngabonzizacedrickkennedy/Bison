@@ -46,6 +46,9 @@ class CatalogIndex:
     def get(self, model_id: str) -> CatalogRecord | None:
         return next((record for record in self._records if record.model_id == model_id), None)
 
+    def records_for(self, provider: str) -> list[CatalogRecord]:
+        return [record for record in self._records if record.provider == provider]
+
     async def load(self) -> bool:
         try:
             raw: Any = json.loads(self._path.read_text(encoding="utf-8"))

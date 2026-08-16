@@ -53,7 +53,8 @@ def main() -> int:
     init = OUT_DIR / "__init__.py"
     init.write_text(
         "from bison_contracts.models import *\n"
-        "from bison_contracts.prompts import load_prompt, prompt_ref\n",
+        "from bison_contracts.prompts import load_prompt as load_prompt\n"
+        "from bison_contracts.prompts import prompt_ref as prompt_ref\n",
         encoding="utf8",
     )
 
