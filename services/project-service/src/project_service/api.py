@@ -8,10 +8,15 @@ from typing import Annotated, Any, Literal
 from bison_contracts import Project
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from project_service import conceive, materials, projects, tasks
+from project_service import briefs, conceive, materials, projects, tasks
+from project_service.briefs import (
+    AnswerInvalidError,
+    BriefNotFoundError,
+    QuestionNotFoundError,
+)
 from project_service.conceive import ConceiveReferenceError, ConceiveRevisionNotFoundError
 from project_service.conceiveblocks import DuplicateBlockIdError, InvalidBlockError
 from project_service.config import settings
@@ -249,6 +254,90 @@ class ProgressSnapshotRead(BaseModel):
     per_task: list[ProgressRead]
 
 
+class BriefCreate(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    conceive_revision_number: int = Field(ge=0)
+    summary: str = Field(min_length=1)
+    interpreted_goal: str = Field(min_length=1)
+    project_type: ProjectType
+    known_constraints: list[str] = Field(default_factory=list)
+    assumptions: list[str] = Field(default_factory=list)
+    out_of_scope: list[str] = Field(default_factory=list)
+    seeded_success_criteria: list[str] = Field(default_factory=list)
+    confidence: float = Field(ge=0.0, le=1.0)
+    unresolved_fields: list[str] = Field(default_factory=list)
+    contradictions: list[str] = Field(default_factory=list)
+    model_id: str = Field(min_length=1)
+    prompt_version: str = Field(min_length=1)
+    prompt_hash: str = Field(min_length=1)
+    clarify: bool = False
+    blocking: bool = False
+    reasons: list[str] = Field(default_factory=list)
+    questions: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class QuestionRead(BaseModel):
+    id: str
+    position: int
+    text: str
+    why_asked: str
+    answer_kind: str
+    choices: list[str] | None
+    answered: bool
+    answer: str | None
+
+
+class ClarificationRead(BaseModel):
+    id: str
+    round: int
+    blocking: bool
+    reasons: list[str]
+    questions: list[QuestionRead]
+    created_at: datetime
+    answered_at: datetime | None
+
+
+class BriefRead(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    id: str
+    project_id: str
+    round: int
+    conceive_revision_number: int
+    summary: str
+    interpreted_goal: str
+    project_type: str
+    known_constraints: list[str]
+    assumptions: list[str]
+    out_of_scope: list[str]
+    seeded_success_criteria: list[str]
+    confidence: float
+    unresolved_fields: list[str]
+    contradictions: list[str]
+    model_id: str
+    prompt_version: str
+    prompt_hash: str
+    created_at: datetime
+
+
+class AnswerBody(BaseModel):
+    text_value: str | None = None
+    choice: str | None = None
+    confirmed: bool | None = None
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class AnswerRead(BaseModel):
+    id: str
+    question_id: str
+    text_value: str | None
+    choice: str | None
+    confirmed: bool | None
+    attachments: list[dict[str, Any]]
+    answered_at: datetime
+
+
 def to_event(row: ProjectEventRow) -> EventRead:
     occurred_at = aware(row.occurred_at)
 
@@ -404,6 +493,23 @@ async def handle_revision_not_found(request: Request, exc: Exception) -> JSONRes
     return JSONResponse(
         status_code=404, content={"error": "conceive_revision_not_found", "detail": str(exc)}
     )
+
+
+@app.exception_handler(BriefNotFoundError)
+async def handle_brief_not_found(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": "brief_not_found", "detail": str(exc)})
+
+
+@app.exception_handler(QuestionNotFoundError)
+async def handle_question_not_found(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=404, content={"error": "question_not_found", "detail": str(exc)}
+    )
+
+
+@app.exception_handler(AnswerInvalidError)
+async def handle_answer_invalid(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"error": "answer_invalid", "detail": str(exc)})
 
 
 @app.get("/health")
@@ -611,4 +717,120 @@ async def read_progress(project_id: str, session: SessionDep) -> ProgressSnapsho
         per_task=[
             ProgressRead(**vars(value)) for key, value in computed.items() if key != OVERALL_ID
         ],
+    )
+
+
+def to_brief(row: Any) -> BriefRead:
+    return BriefRead(
+        id=row.id,
+        project_id=row.project_id,
+        round=row.round,
+        conceive_revision_number=row.conceive_revision_number,
+        summary=row.summary,
+        interpreted_goal=row.interpreted_goal,
+        project_type=row.project_type,
+        known_constraints=row.known_constraints,
+        assumptions=row.assumptions,
+        out_of_scope=row.out_of_scope,
+        seeded_success_criteria=row.seeded_success_criteria,
+        confidence=row.confidence,
+        unresolved_fields=row.unresolved_fields,
+        contradictions=row.contradictions,
+        model_id=row.model_id,
+        prompt_version=row.prompt_version,
+        prompt_hash=row.prompt_hash,
+        created_at=aware(row.created_at) or datetime.now(UTC),
+    )
+
+
+@app.post("/projects/{project_id}/briefs", status_code=201)
+async def create_brief(project_id: str, payload: BriefCreate, session: SessionDep) -> BriefRead:
+    fields = payload.model_dump()
+    questions = fields.pop("questions")
+    clarify = fields.pop("clarify")
+    blocking = fields.pop("blocking")
+    reasons = fields.pop("reasons")
+
+    row = await briefs.create(session, project_id, fields, questions, clarify, blocking, reasons)
+
+    return to_brief(row)
+
+
+@app.get("/projects/{project_id}/briefs")
+async def read_briefs(project_id: str, session: SessionDep) -> list[BriefRead]:
+    return [to_brief(row) for row in await briefs.list_briefs(session, project_id)]
+
+
+@app.get("/projects/{project_id}/brief")
+async def read_latest_brief(project_id: str, session: SessionDep) -> BriefRead | None:
+    row = await briefs.latest(session, project_id)
+
+    return to_brief(row) if row is not None else None
+
+
+def reply_text(row: Any) -> str | None:
+    if row is None:
+        return None
+
+    if row.confirmed is not None:
+        return "yes" if row.confirmed else "no"
+
+    for value in (row.choice, row.text_value):
+        if isinstance(value, str) and value:
+            return value
+
+    return None
+
+
+@app.get("/projects/{project_id}/clarifications")
+async def read_clarifications(project_id: str, session: SessionDep) -> list[ClarificationRead]:
+    await projects.get(session, project_id)
+    collected: list[ClarificationRead] = []
+
+    for request_row in await briefs.requests_for(session, project_id):
+        questions = await briefs.questions_for(session, request_row.id)
+        replies = {
+            row.question_id: row
+            for row in await briefs.answers_for(session, [q.id for q in questions])
+        }
+
+        collected.append(
+            ClarificationRead(
+                id=request_row.id,
+                round=request_row.round,
+                blocking=request_row.blocking,
+                reasons=request_row.reasons,
+                questions=[
+                    QuestionRead(
+                        id=question.id,
+                        position=question.position,
+                        text=question.text_value,
+                        why_asked=question.why_asked,
+                        answer_kind=question.answer_kind,
+                        choices=question.choices,
+                        answered=question.id in replies,
+                        answer=reply_text(replies.get(question.id)),
+                    )
+                    for question in questions
+                ],
+                created_at=aware(request_row.created_at) or datetime.now(UTC),
+                answered_at=aware(request_row.answered_at),
+            )
+        )
+
+    return collected
+
+
+@app.post("/questions/{question_id}/answer")
+async def answer_question(question_id: str, payload: AnswerBody, session: SessionDep) -> AnswerRead:
+    row = await briefs.answer(session, question_id, payload.model_dump())
+
+    return AnswerRead(
+        id=row.id,
+        question_id=row.question_id,
+        text_value=row.text_value,
+        choice=row.choice,
+        confirmed=row.confirmed,
+        attachments=row.attachments,
+        answered_at=aware(row.answered_at) or datetime.now(UTC),
     )

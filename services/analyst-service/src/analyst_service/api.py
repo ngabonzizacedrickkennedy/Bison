@@ -37,6 +37,7 @@ class QuestionRead(BaseModel):
 class BriefRead(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
+    brief_id: str
     project_id: str
     request_id: str
     conceive_revision_number: int
@@ -146,11 +147,15 @@ async def analyse(project_id: str, request_id: str | None = None) -> BriefRead:
     facts = await projects.project(project_id)
     conceive = await projects.conceive(project_id)
     materials = await projects.materials(project_id)
+    answers = await projects.answers(project_id)
+    prior = await projects.prior_brief(project_id)
 
     context = AnalystContext(
         project=facts,
         conceive=conceive,
         materials=materials,
+        answers=answers,
+        prior=prior,
     )
 
     correlation = request_id or str(uuid4())
@@ -170,7 +175,42 @@ async def analyse(project_id: str, request_id: str | None = None) -> BriefRead:
     draft = outcome.draft
     decision = outcome.decision
 
+    questions = [
+        {
+            "text": question.text,
+            "why_asked": question.why_asked,
+            "answer_kind": question.answer_kind,
+            "choices": question.choices,
+        }
+        for question in decision.questions
+    ]
+
+    stored = await projects.store_brief(
+        project_id,
+        {
+            "conceive_revision_number": conceive.revision_number,
+            "summary": draft.summary,
+            "interpreted_goal": draft.interpreted_goal,
+            "project_type": draft.project_type,
+            "known_constraints": draft.known_constraints,
+            "assumptions": draft.assumptions,
+            "out_of_scope": draft.out_of_scope,
+            "seeded_success_criteria": draft.seeded_success_criteria,
+            "confidence": draft.confidence,
+            "unresolved_fields": draft.unresolved_fields,
+            "contradictions": draft.contradictions,
+            "model_id": outcome.model_id,
+            "prompt_version": outcome.prompt_version,
+            "prompt_hash": outcome.prompt_hash,
+            "clarify": decision.clarify,
+            "blocking": decision.blocking,
+            "reasons": decision.reasons,
+            "questions": questions,
+        },
+    )
+
     return BriefRead(
+        brief_id=stored,
         project_id=project_id,
         request_id=correlation,
         conceive_revision_number=conceive.revision_number,

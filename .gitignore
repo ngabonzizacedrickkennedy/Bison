@@ -29,3 +29,4 @@ Thumbs.db
 apps/desktop/dist/
 apps/desktop/dist-electron/
 apps/desktop/release/
+scratch/

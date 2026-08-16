@@ -5,10 +5,12 @@ from typing import Any
 import httpx
 
 from analyst_service.context import (
+    AnsweredQuestion,
     Conceive,
     LanguageTally,
     ManifestSummary,
     Material,
+    PriorBrief,
     ProjectFacts,
     ScanSummary,
     SecretSighting,
@@ -158,6 +160,69 @@ class ProjectClient:
             collected.append(to_material(entry, scan))
 
         return collected
+
+    async def answers(self, project_id: str) -> list[AnsweredQuestion]:
+        payload = await self._array(f"/projects/{project_id}/clarifications", project_id)
+        collected: list[AnsweredQuestion] = []
+
+        for request in payload:
+            round_number = whole(request, "round")
+
+            for question in objects(request, "questions"):
+                if question.get("answered") is not True:
+                    continue
+
+                reply = question.get("answer")
+
+                collected.append(
+                    AnsweredQuestion(
+                        round=round_number,
+                        text=text(question, "text"),
+                        why_asked=text(question, "why_asked"),
+                        answer=reply if isinstance(reply, str) else "",
+                    )
+                )
+
+        return collected
+
+    async def prior_brief(self, project_id: str) -> PriorBrief | None:
+        path = f"/projects/{project_id}/brief"
+        response = await self._fetch(path)
+
+        if response.status_code == httpx.codes.NOT_FOUND:
+            return None
+
+        if response.status_code >= httpx.codes.BAD_REQUEST:
+            raise UpstreamError("project-service", f"{path} responded {response.status_code}")
+
+        parsed: Any = response.json()
+
+        if not isinstance(parsed, dict):
+            return None
+
+        return PriorBrief(
+            round=whole(parsed, "round"),
+            summary=text(parsed, "summary"),
+            interpreted_goal=text(parsed, "interpreted_goal"),
+            unresolved_fields=strings(parsed, "unresolved_fields"),
+        )
+
+    async def store_brief(self, project_id: str, body: dict[str, Any]) -> str:
+        try:
+            response = await self._client.post(
+                f"/projects/{project_id}/briefs", json=body, timeout=self._timeout
+            )
+        except httpx.HTTPError as error:
+            raise UpstreamError("project-service", "storing the brief failed") from error
+
+        if response.status_code >= httpx.codes.BAD_REQUEST:
+            raise UpstreamError(
+                "project-service", f"storing the brief responded {response.status_code}"
+            )
+
+        parsed: Any = response.json()
+
+        return text(parsed, "id") if isinstance(parsed, dict) else ""
 
     async def _fetch(self, path: str) -> httpx.Response:
         try:

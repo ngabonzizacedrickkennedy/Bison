@@ -8,6 +8,7 @@ from sqlalchemy import (
     JSON,
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -232,5 +233,89 @@ class ProjectEventRow(Base):
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     actor: Mapped[str] = mapped_column(String(16), nullable=False, default="user")
     occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
+class ProjectBriefRow(Base):
+    __tablename__ = "project_brief"
+    __table_args__ = (UniqueConstraint("project_id", "round", name="uq_brief_project_round"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("project.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    round: Mapped[int] = mapped_column(Integer, nullable=False)
+    conceive_revision_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    interpreted_goal: Mapped[str] = mapped_column(Text, nullable=False)
+    project_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    known_constraints: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    assumptions: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    out_of_scope: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    seeded_success_criteria: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    unresolved_fields: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    contradictions: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    model_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    prompt_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
+class ClarificationRequestRow(Base):
+    __tablename__ = "clarification_request"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("project.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    brief_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("project_brief.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    round: Mapped[int] = mapped_column(Integer, nullable=False)
+    blocking: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    reasons: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ClarificationQuestionRow(Base):
+    __tablename__ = "clarification_question"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    request_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("clarification_request.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    text_value: Mapped[str] = mapped_column(Text, nullable=False)
+    why_asked: Mapped[str] = mapped_column(Text, nullable=False)
+    answer_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    choices: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+
+
+class ClarificationAnswerRow(Base):
+    __tablename__ = "clarification_answer"
+    __table_args__ = (UniqueConstraint("question_id", name="uq_answer_question"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    question_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("clarification_question.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    text_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    choice: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    confirmed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    attachments: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    answered_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
     )
