@@ -121,6 +121,9 @@ importers:
       '@bison/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      fastify:
+        specifier: ^5.2.0
+        version: 5.11.3
     devDependencies:
       '@bison/tsconfig':
         specifier: workspace:*
