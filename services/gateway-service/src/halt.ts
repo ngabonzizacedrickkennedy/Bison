@@ -84,7 +84,7 @@ async function notify(
       signal: AbortSignal.timeout(config.haltTimeoutMs),
     });
 
-    response.body.destroy();
+    await response.body.dump();
 
     return {
       service: recipient.service,
