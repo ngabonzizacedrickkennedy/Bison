@@ -319,3 +319,53 @@ class ClarificationAnswerRow(Base):
     answered_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=utc_now
     )
+
+
+class ActionPlanRow(Base):
+    __tablename__ = "action_plan"
+    __table_args__ = (Index("ix_action_plan_task_created", "task_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("project.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    task_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("task_node.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    request_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    scope_root: Mapped[str] = mapped_column(Text, nullable=False)
+    intent: Mapped[str] = mapped_column(String(24), nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    target_engine_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    target_model_id: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    steps_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    gated_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    repaired: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    model_id: Mapped[str] = mapped_column(String(200), nullable=False)
+    prompt_name: Mapped[str] = mapped_column(String(32), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(16), nullable=False)
+    prompt_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
+class ActionStepRow(Base):
+    __tablename__ = "action_step"
+    __table_args__ = (UniqueConstraint("plan_id", "position", name="uq_step_plan_position"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    plan_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("action_plan.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    description: Mapped[str] = mapped_column(String(500), nullable=False)
+    service: Mapped[str] = mapped_column(String(24), nullable=False)
+    requires_confirmation: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    confirmation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    on_failure: Mapped[str] = mapped_column(String(12), nullable=False, default="abort")
+    reversible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    criterion_refs: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    effects: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    state: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")

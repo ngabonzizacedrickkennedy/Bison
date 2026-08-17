@@ -26,6 +26,11 @@ class TaskNotFoundError(UpstreamError):
         super().__init__("project-service", f"task {task_id} is not in this project")
 
 
+class PlanNotStoredError(UpstreamError):
+    def __init__(self, detail: str) -> None:
+        super().__init__("project-service", f"the plan was not stored: {detail}")
+
+
 def text(payload: dict[str, Any], key: str) -> str:
     value = payload.get(key)
 
@@ -152,6 +157,27 @@ class ProjectClient:
             return None
 
         return to_brief_facts(parsed)
+
+    async def save_plan(self, task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        path = f"/tasks/{task_id}/plans"
+
+        try:
+            response = await self._client.post(path, json=payload, timeout=self._timeout)
+        except httpx.HTTPError as error:
+            raise UpstreamError("project-service", f"{path} unreachable") from error
+
+        if response.status_code == httpx.codes.NOT_FOUND:
+            raise TaskNotFoundError(task_id)
+
+        if response.status_code >= httpx.codes.BAD_REQUEST:
+            raise PlanNotStoredError(f"{path} responded {response.status_code}")
+
+        parsed: Any = response.json()
+
+        if not isinstance(parsed, dict):
+            raise PlanNotStoredError(f"{path} returned a non-object body")
+
+        return parsed
 
     async def _fetch(self, path: str) -> httpx.Response:
         try:

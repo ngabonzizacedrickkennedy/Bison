@@ -14,8 +14,10 @@ from router_service.broker import BrokerClient, BrokerError, BrokerUnreachableEr
 from router_service.config import settings
 from router_service.context import RouterContext
 from router_service.gating import PlanRejectedError
+from router_service.persist import plan_payload
 from router_service.plan import RouterParseError
 from router_service.upstream import (
+    PlanNotStoredError,
     ProjectClient,
     ProjectNotFoundError,
     TaskNotFoundError,
@@ -46,6 +48,7 @@ class EffectsRead(BaseModel):
 
 
 class StepRead(BaseModel):
+    step_id: str
     position: int
     description: str
     service: str
@@ -60,6 +63,7 @@ class StepRead(BaseModel):
 class PlanRead(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
 
+    plan_id: str
     project_id: str
     task_id: str
     request_id: str
@@ -141,6 +145,11 @@ async def handle_rejected(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(status_code=422, content={"error": "plan_rejected", "detail": str(exc)})
 
 
+@app.exception_handler(PlanNotStoredError)
+async def handle_not_stored(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(status_code=502, content={"error": "plan_not_stored", "detail": str(exc)})
+
+
 @app.get("/health")
 async def health() -> Health:
     resolved = settings()
@@ -189,7 +198,15 @@ async def plan_task(project_id: str, task_id: str, request_id: str | None = None
         repair_attempts=resolved.repair_attempts,
     )
 
+    stored = await projects.save_plan(task_id, plan_payload(outcome, correlation, scope_root))
+    identities = {
+        entry["position"]: entry["id"]
+        for entry in stored.get("steps", [])
+        if isinstance(entry, dict)
+    }
+
     return PlanRead(
+        plan_id=str(stored["id"]),
         project_id=project_id,
         task_id=task_id,
         request_id=correlation,
@@ -198,6 +215,7 @@ async def plan_task(project_id: str, task_id: str, request_id: str | None = None
         rationale=outcome.plan.rationale,
         steps=[
             StepRead(
+                step_id=identities[step.position],
                 position=step.position,
                 description=step.description,
                 service=step.service,

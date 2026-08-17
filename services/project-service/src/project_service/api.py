@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from project_service import briefs, conceive, materials, projects, tasks
+from project_service import briefs, conceive, materials, plans, projects, tasks
 from project_service.briefs import (
     AnswerInvalidError,
     BriefNotFoundError,
@@ -32,6 +32,12 @@ from project_service.materials import (
     ScanNotFoundError,
 )
 from project_service.models import ProjectEventRow
+from project_service.plans import (
+    EmptyPlanError,
+    PlanNotFoundError,
+    StepNotFoundError,
+    UnknownCriterionRefError,
+)
 from project_service.progress import OVERALL_ID
 from project_service.projects import ProjectCapReachedError, ProjectNotFoundError
 from project_service.tasks import (
@@ -512,6 +518,28 @@ async def handle_answer_invalid(request: Request, exc: Exception) -> JSONRespons
     return JSONResponse(status_code=422, content={"error": "answer_invalid", "detail": str(exc)})
 
 
+@app.exception_handler(PlanNotFoundError)
+async def handle_plan_not_found(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": "plan_not_found", "detail": str(exc)})
+
+
+@app.exception_handler(StepNotFoundError)
+async def handle_step_not_found(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": "step_not_found", "detail": str(exc)})
+
+
+@app.exception_handler(UnknownCriterionRefError)
+async def handle_unknown_criterion_ref(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=422, content={"error": "unknown_criterion_ref", "detail": str(exc)}
+    )
+
+
+@app.exception_handler(EmptyPlanError)
+async def handle_empty_plan(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"error": "empty_plan", "detail": str(exc)})
+
+
 @app.get("/health")
 async def health() -> Health:
     return Health(
@@ -834,3 +862,148 @@ async def answer_question(question_id: str, payload: AnswerBody, session: Sessio
         attachments=row.attachments,
         answered_at=aware(row.answered_at) or datetime.now(UTC),
     )
+
+
+class StepBody(BaseModel):
+    description: str = Field(min_length=1, max_length=500)
+    service: Literal["task-runner", "automation", "dev-env", "engine-session"]
+    requires_confirmation: bool = True
+    confirmation_reason: str | None = None
+    on_failure: Literal["abort", "retry", "replan", "continue"] = "abort"
+    reversible: bool = False
+    criterion_refs: list[str] = Field(default_factory=list)
+    effects: dict[str, Any] = Field(default_factory=dict)
+
+
+class PlanCreate(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    request_id: str = Field(min_length=1)
+    scope_root: str = Field(min_length=1)
+    intent: Literal["chat", "dev_task", "automation_task", "script_task", "account_action"]
+    rationale: str = Field(min_length=1, max_length=500)
+    target_engine_id: str | None = None
+    target_model_id: str | None = None
+    attempts: int = Field(default=1, ge=1)
+    repaired: bool = False
+    model_id: str = Field(min_length=1)
+    prompt_name: str = Field(min_length=1)
+    prompt_version: str = Field(min_length=1)
+    prompt_hash: str = Field(min_length=1)
+    steps: list[StepBody] = Field(min_length=1)
+
+
+class StepRead(BaseModel):
+    id: str
+    plan_id: str
+    position: int
+    description: str
+    service: str
+    requires_confirmation: bool
+    confirmation_reason: str | None
+    on_failure: str
+    reversible: bool
+    criterion_refs: list[str]
+    effects: dict[str, Any]
+    state: str
+
+
+class PlanRead(BaseModel):
+    model_config = ConfigDict(protected_namespaces=())
+
+    id: str
+    project_id: str
+    task_id: str
+    request_id: str
+    scope_root: str
+    intent: str
+    rationale: str
+    target_engine_id: str | None
+    target_model_id: str | None
+    steps_total: int
+    gated_count: int
+    attempts: int
+    repaired: bool
+    model_id: str
+    prompt_name: str
+    prompt_version: str
+    prompt_hash: str
+    created_at: datetime
+    steps: list[StepRead]
+
+
+def to_step(row: Any) -> StepRead:
+    return StepRead(
+        id=row.id,
+        plan_id=row.plan_id,
+        position=row.position,
+        description=row.description,
+        service=row.service,
+        requires_confirmation=row.requires_confirmation,
+        confirmation_reason=row.confirmation_reason,
+        on_failure=row.on_failure,
+        reversible=row.reversible,
+        criterion_refs=row.criterion_refs,
+        effects=row.effects,
+        state=row.state,
+    )
+
+
+def to_plan(row: Any, steps: list[Any]) -> PlanRead:
+    return PlanRead(
+        id=row.id,
+        project_id=row.project_id,
+        task_id=row.task_id,
+        request_id=row.request_id,
+        scope_root=row.scope_root,
+        intent=row.intent,
+        rationale=row.rationale,
+        target_engine_id=row.target_engine_id,
+        target_model_id=row.target_model_id,
+        steps_total=row.steps_total,
+        gated_count=row.gated_count,
+        attempts=row.attempts,
+        repaired=row.repaired,
+        model_id=row.model_id,
+        prompt_name=row.prompt_name,
+        prompt_version=row.prompt_version,
+        prompt_hash=row.prompt_hash,
+        created_at=aware(row.created_at) or datetime.now(UTC),
+        steps=[to_step(step) for step in steps],
+    )
+
+
+@app.post("/tasks/{task_id}/plans", status_code=201)
+async def create_plan(task_id: str, payload: PlanCreate, session: SessionDep) -> PlanRead:
+    fields = payload.model_dump()
+    steps = fields.pop("steps")
+    row = await plans.create(session, task_id, fields, steps)
+
+    return to_plan(row, await plans.steps_for(session, row.id))
+
+
+@app.get("/tasks/{task_id}/plans")
+async def read_plans(task_id: str, session: SessionDep) -> list[PlanRead]:
+    return [
+        to_plan(row, await plans.steps_for(session, row.id))
+        for row in await plans.list_for_task(session, task_id)
+    ]
+
+
+@app.get("/tasks/{task_id}/plan")
+async def read_latest_plan(task_id: str, session: SessionDep) -> PlanRead | None:
+    row = await plans.latest(session, task_id)
+
+    return to_plan(row, await plans.steps_for(session, row.id)) if row is not None else None
+
+
+@app.get("/plans/{plan_id}")
+async def read_plan(plan_id: str, session: SessionDep) -> PlanRead:
+    row = await plans.get(session, plan_id)
+
+    return to_plan(row, await plans.steps_for(session, row.id))
+
+
+@app.get("/steps/{step_id}")
+async def read_step(step_id: str, session: SessionDep) -> StepRead:
+    return to_step(await plans.get_step(session, step_id))
