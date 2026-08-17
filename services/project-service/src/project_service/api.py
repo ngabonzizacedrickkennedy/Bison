@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from project_service import briefs, conceive, materials, plans, projects, tasks
+from project_service import briefs, conceive, materials, plans, projects, records, tasks
 from project_service.briefs import (
     AnswerInvalidError,
     BriefNotFoundError,
@@ -40,6 +40,12 @@ from project_service.plans import (
 )
 from project_service.progress import OVERALL_ID
 from project_service.projects import ProjectCapReachedError, ProjectNotFoundError
+from project_service.reconcile import (
+    UnknownHaltReasonError,
+    UnknownStepStateError,
+    UnplannedStepError,
+)
+from project_service.records import NoPlanToReconcileError, RecordNotFoundError
 from project_service.tasks import (
     CriterionNotFoundError,
     ParentOutsideProjectError,
@@ -540,6 +546,37 @@ async def handle_empty_plan(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(status_code=422, content={"error": "empty_plan", "detail": str(exc)})
 
 
+@app.exception_handler(RecordNotFoundError)
+async def handle_record_not_found(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": "record_not_found", "detail": str(exc)})
+
+
+@app.exception_handler(NoPlanToReconcileError)
+async def handle_no_plan_to_reconcile(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=409, content={"error": "no_plan_to_reconcile", "detail": str(exc)}
+    )
+
+
+@app.exception_handler(UnknownHaltReasonError)
+async def handle_unknown_halt_reason(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=422, content={"error": "unknown_halt_reason", "detail": str(exc)}
+    )
+
+
+@app.exception_handler(UnplannedStepError)
+async def handle_unplanned_step(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"error": "unplanned_step", "detail": str(exc)})
+
+
+@app.exception_handler(UnknownStepStateError)
+async def handle_unknown_step_state(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=422, content={"error": "unknown_step_state", "detail": str(exc)}
+    )
+
+
 @app.get("/health")
 async def health() -> Health:
     return Health(
@@ -1007,3 +1044,129 @@ async def read_plan(plan_id: str, session: SessionDep) -> PlanRead:
 @app.get("/steps/{step_id}")
 async def read_step(step_id: str, session: SessionDep) -> StepRead:
     return to_step(await plans.get_step(session, step_id))
+
+
+class OutcomeBody(BaseModel):
+    step_id: str = Field(min_length=1)
+    state: Literal[
+        "pending",
+        "awaiting_confirmation",
+        "running",
+        "succeeded",
+        "failed",
+        "aborted",
+        "never_attempted",
+    ]
+    touched_paths: list[str] = Field(default_factory=list)
+    exit_code: int | None = None
+    error_message: str | None = None
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+
+
+class RecordCreate(BaseModel):
+    request_id: str = Field(min_length=1)
+    halt_reason: Literal["kill_switch", "step_failure", "project_switch", "user_stop"]
+    step_outcomes: list[OutcomeBody] = Field(default_factory=list)
+
+
+class OutcomeRead(BaseModel):
+    id: str
+    record_id: str
+    step_id: str
+    position: int
+    description: str
+    state: str
+    touched_paths: list[str]
+    exit_code: int | None
+    error_message: str | None
+    started_at: datetime | None
+    ended_at: datetime | None
+
+
+class RecordRead(BaseModel):
+    id: str
+    project_id: str
+    task_id: str
+    plan_id: str
+    request_id: str
+    halt_reason: str
+    steps_total: int
+    steps_completed: int
+    steps_never_attempted: int
+    criteria_verified_ids: list[str]
+    criteria_unverified_ids: list[str]
+    touched_paths: list[str]
+    percentage_at_halt: float
+    plain_summary: str
+    written_at: datetime
+    step_outcomes: list[OutcomeRead]
+
+
+def to_outcome(row: Any) -> OutcomeRead:
+    return OutcomeRead(
+        id=row.id,
+        record_id=row.record_id,
+        step_id=row.step_id,
+        position=row.position,
+        description=row.description,
+        state=row.state,
+        touched_paths=row.touched_paths,
+        exit_code=row.exit_code,
+        error_message=row.error_message,
+        started_at=aware(row.started_at),
+        ended_at=aware(row.ended_at),
+    )
+
+
+def to_record(row: Any, outcomes: list[Any]) -> RecordRead:
+    return RecordRead(
+        id=row.id,
+        project_id=row.project_id,
+        task_id=row.task_id,
+        plan_id=row.plan_id,
+        request_id=row.request_id,
+        halt_reason=row.halt_reason,
+        steps_total=row.steps_total,
+        steps_completed=row.steps_completed,
+        steps_never_attempted=row.steps_never_attempted,
+        criteria_verified_ids=row.criteria_verified_ids,
+        criteria_unverified_ids=row.criteria_unverified_ids,
+        touched_paths=row.touched_paths,
+        percentage_at_halt=row.percentage_at_halt,
+        plain_summary=row.plain_summary,
+        written_at=aware(row.written_at) or datetime.now(UTC),
+        step_outcomes=[to_outcome(outcome) for outcome in outcomes],
+    )
+
+
+@app.post("/tasks/{task_id}/reconciliations", status_code=201)
+async def create_reconciliation(
+    task_id: str, payload: RecordCreate, session: SessionDep
+) -> RecordRead:
+    outcomes = [outcome.model_dump(mode="json") for outcome in payload.step_outcomes]
+    row = await records.write(session, task_id, payload.request_id, payload.halt_reason, outcomes)
+
+    return to_record(row, await records.outcomes_for(session, row.id))
+
+
+@app.get("/tasks/{task_id}/reconciliations")
+async def read_reconciliations(task_id: str, session: SessionDep) -> list[RecordRead]:
+    return [
+        to_record(row, await records.outcomes_for(session, row.id))
+        for row in await records.list_for_task(session, task_id)
+    ]
+
+
+@app.get("/tasks/{task_id}/reconciliation")
+async def read_latest_reconciliation(task_id: str, session: SessionDep) -> RecordRead | None:
+    row = await records.latest(session, task_id)
+
+    return to_record(row, await records.outcomes_for(session, row.id)) if row is not None else None
+
+
+@app.get("/reconciliations/{record_id}")
+async def read_reconciliation(record_id: str, session: SessionDep) -> RecordRead:
+    row = await records.get(session, record_id)
+
+    return to_record(row, await records.outcomes_for(session, row.id))

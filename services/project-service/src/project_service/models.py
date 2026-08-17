@@ -369,3 +369,56 @@ class ActionStepRow(Base):
     criterion_refs: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     effects: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     state: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+
+
+class ReconciliationRecordRow(Base):
+    __tablename__ = "reconciliation_record"
+    __table_args__ = (Index("ix_reconciliation_task_written", "task_id", "written_at"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("project.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    task_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("task_node.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    plan_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("action_plan.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    request_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    halt_reason: Mapped[str] = mapped_column(String(16), nullable=False)
+    steps_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    steps_completed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    steps_never_attempted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    criteria_verified_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    criteria_unverified_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    touched_paths: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    percentage_at_halt: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    plain_summary: Mapped[str] = mapped_column(String(1000), nullable=False)
+    written_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=utc_now
+    )
+
+
+class StepOutcomeRow(Base):
+    __tablename__ = "step_outcome"
+    __table_args__ = (UniqueConstraint("record_id", "position", name="uq_outcome_record_position"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    record_id: Mapped[str] = mapped_column(
+        String(36),
+        ForeignKey("reconciliation_record.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    step_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("action_step.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    description: Mapped[str] = mapped_column(String(500), nullable=False)
+    state: Mapped[str] = mapped_column(String(20), nullable=False)
+    touched_paths: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    exit_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
