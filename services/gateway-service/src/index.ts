@@ -18,6 +18,7 @@ import {
   refreshCatalog,
 } from "./broker-client.js";
 import { config } from "./config.js";
+import { broadcast, isHaltReason } from "./halt.js";
 import { listMessages, persistMessage, taskStoreHealthy } from "./task-store-client.js";
 
 export const SERVICE_NAME = "gateway-service";
@@ -80,6 +81,8 @@ export function buildServer() {
   const app = Fastify({ logger: { level: "info" } });
 
   app.register(websocket);
+
+  const clients = new Set<(type: string, requestId: string, payload: unknown) => void>();
 
   const viaBroker = async <T>(
     reply: FastifyReply,
@@ -173,6 +176,44 @@ export function buildServer() {
     }
   });
 
+  app.post("/halt", async (request, reply) => {
+    const body = request.body as {
+      reason?: unknown;
+      request_id?: unknown;
+      project_id?: unknown;
+      task_id?: unknown;
+    } | null;
+
+    const reason = body?.reason ?? "kill_switch";
+
+    if (!isHaltReason(reason)) {
+      return reply.status(422).send({ error: `unknown halt reason "${String(reason)}"` });
+    }
+
+    const signal = await broadcast({
+      reason,
+      requestId: typeof body?.request_id === "string" ? body.request_id : null,
+      projectId: typeof body?.project_id === "string" ? body.project_id : null,
+      taskId: typeof body?.task_id === "string" ? body.task_id : null,
+    });
+
+    app.log.warn(
+      {
+        halt: signal.id,
+        reason: signal.reason,
+        acknowledged: signal.acknowledged_count,
+        silent: signal.silent_count,
+      },
+      "HALT broadcast",
+    );
+
+    for (const emit of clients) {
+      emit("halt", signal.request_id ?? signal.id, signal);
+    }
+
+    return signal;
+  });
+
   app.register(async (instance) => {
     instance.get("/ws", { websocket: true }, (socket) => {
       let sequence = 0;
@@ -186,6 +227,12 @@ export function buildServer() {
         };
         socket.send(JSON.stringify(event));
       };
+
+      clients.add(emit);
+
+      socket.on("close", () => {
+        clients.delete(emit);
+      });
 
       socket.on("message", (raw: Buffer) => {
         const requestId = randomUUID();
