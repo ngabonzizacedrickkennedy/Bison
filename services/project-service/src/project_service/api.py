@@ -46,6 +46,11 @@ from project_service.reconcile import (
     UnplannedStepError,
 )
 from project_service.records import NoPlanToReconcileError, RecordNotFoundError
+from project_service.stepstates import (
+    IllegalStepTransitionError,
+    ReconciliationOnlyStateError,
+    StepReasonRequiredError,
+)
 from project_service.tasks import (
     CriterionNotFoundError,
     ParentOutsideProjectError,
@@ -574,6 +579,27 @@ async def handle_unplanned_step(request: Request, exc: Exception) -> JSONRespons
 async def handle_unknown_step_state(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(
         status_code=422, content={"error": "unknown_step_state", "detail": str(exc)}
+    )
+
+
+@app.exception_handler(IllegalStepTransitionError)
+async def handle_illegal_step_transition(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=409, content={"error": "illegal_step_transition", "detail": str(exc)}
+    )
+
+
+@app.exception_handler(StepReasonRequiredError)
+async def handle_step_reason_required(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=422, content={"error": "step_reason_required", "detail": str(exc)}
+    )
+
+
+@app.exception_handler(ReconciliationOnlyStateError)
+async def handle_reconciliation_only_state(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=422, content={"error": "reconciliation_only_state", "detail": str(exc)}
     )
 
 
@@ -1170,3 +1196,56 @@ async def read_reconciliation(record_id: str, session: SessionDep) -> RecordRead
     row = await records.get(session, record_id)
 
     return to_record(row, await records.outcomes_for(session, row.id))
+
+
+class TransitionCreate(BaseModel):
+    state: Literal["awaiting_confirmation", "running", "succeeded", "failed", "aborted"]
+    reason: str | None = None
+    actor: str = Field(min_length=1)
+
+
+class TransitionRead(BaseModel):
+    id: str
+    step_id: str
+    plan_id: str
+    task_id: str
+    from_state: str
+    to_state: str
+    reason: str | None
+    actor: str
+    occurred_at: datetime
+
+
+def to_transition(row: Any) -> TransitionRead:
+    return TransitionRead(
+        id=row.id,
+        step_id=row.step_id,
+        plan_id=row.plan_id,
+        task_id=row.task_id,
+        from_state=row.from_state,
+        to_state=row.to_state,
+        reason=row.reason,
+        actor=row.actor,
+        occurred_at=aware(row.occurred_at) or datetime.now(UTC),
+    )
+
+
+@app.post("/steps/{step_id}/transitions", status_code=201)
+async def create_step_transition(
+    step_id: str, payload: TransitionCreate, session: SessionDep
+) -> StepRead:
+    row = await plans.transition_step(
+        session, step_id, payload.state, payload.reason, payload.actor
+    )
+
+    return to_step(row)
+
+
+@app.get("/steps/{step_id}/transitions")
+async def read_step_transitions(step_id: str, session: SessionDep) -> list[TransitionRead]:
+    return [to_transition(row) for row in await plans.transitions_for_step(session, step_id)]
+
+
+@app.get("/tasks/{task_id}/step-transitions")
+async def read_task_step_transitions(task_id: str, session: SessionDep) -> list[TransitionRead]:
+    return [to_transition(row) for row in await plans.transitions_for_task(session, task_id)]

@@ -5,8 +5,13 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from project_service import events
-from project_service.models import AcceptanceCriterionRow, ActionPlanRow, ActionStepRow
+from project_service import events, stepstates
+from project_service.models import (
+    AcceptanceCriterionRow,
+    ActionPlanRow,
+    ActionStepRow,
+    StepTransitionRow,
+)
 from project_service.tasks import get_task
 
 STEP_STATES = frozenset(
@@ -176,6 +181,61 @@ async def list_for_task(session: AsyncSession, task_id: str) -> list[ActionPlanR
         select(ActionPlanRow)
         .where(ActionPlanRow.task_id == task_id)
         .order_by(ActionPlanRow.created_at.asc())
+    )
+
+    return list(result.scalars().all())
+
+
+async def transition_step(
+    session: AsyncSession,
+    step_id: str,
+    target: str,
+    reason: str | None,
+    actor: str,
+) -> ActionStepRow:
+    step = await get_step(session, step_id)
+    plan = await get(session, step.plan_id)
+
+    stepstates.assert_transition(step.state, target, reason)
+
+    previous = step.state
+    step.state = target
+
+    session.add(
+        StepTransitionRow(
+            step_id=step.id,
+            plan_id=plan.id,
+            task_id=plan.task_id,
+            from_state=previous,
+            to_state=target,
+            reason=reason,
+            actor=actor,
+        )
+    )
+
+    await session.commit()
+    await session.refresh(step)
+
+    return step
+
+
+async def transitions_for_step(session: AsyncSession, step_id: str) -> list[StepTransitionRow]:
+    await get_step(session, step_id)
+
+    result = await session.execute(
+        select(StepTransitionRow)
+        .where(StepTransitionRow.step_id == step_id)
+        .order_by(StepTransitionRow.occurred_at.asc())
+    )
+
+    return list(result.scalars().all())
+
+
+async def transitions_for_task(session: AsyncSession, task_id: str) -> list[StepTransitionRow]:
+    result = await session.execute(
+        select(StepTransitionRow)
+        .where(StepTransitionRow.task_id == task_id)
+        .order_by(StepTransitionRow.occurred_at.asc())
     )
 
     return list(result.scalars().all())
