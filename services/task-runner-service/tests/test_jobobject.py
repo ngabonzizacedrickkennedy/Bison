@@ -4,6 +4,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -19,7 +20,7 @@ from task_runner_service.sandbox import (
 
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="job objects are Windows only")
 
-if sys.platform == "win32":
+if TYPE_CHECKING or sys.platform == "win32":
     from task_runner_service.jobobject import JobObjectSandbox
 
 ENVIRONMENT_KEYS = ("SYSTEMROOT", "PATH", "TEMP")
