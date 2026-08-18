@@ -82,7 +82,8 @@ def test_the_backend_reports_what_it_does_not_enforce(sandbox: JobObjectSandbox)
     assert sandbox.accepts == frozenset({"native"})
     assert sandbox.enforcement.process_tree_kill
     assert sandbox.enforcement.memory_limit
-    assert not sandbox.enforcement.filesystem_scope
+    assert not sandbox.enforcement.filesystem_write_scope
+    assert not sandbox.enforcement.filesystem_read_scope
     assert not sandbox.enforcement.network_isolation
 
 

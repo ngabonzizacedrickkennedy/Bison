@@ -52,7 +52,8 @@ class Limits:
 
 @dataclass(frozen=True)
 class Enforcement:
-    filesystem_scope: bool
+    filesystem_write_scope: bool
+    filesystem_read_scope: bool
     network_isolation: bool
     memory_limit: bool
     process_tree_kill: bool

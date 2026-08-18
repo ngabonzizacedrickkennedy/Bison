@@ -34,7 +34,8 @@ BACKEND: SandboxBackend = SandboxBackend.job_object
 ACCEPTS: frozenset[ProgramKind] = frozenset({"native"})
 
 ENFORCEMENT = Enforcement(
-    filesystem_scope=False,
+    filesystem_write_scope=False,
+    filesystem_read_scope=False,
     network_isolation=False,
     memory_limit=True,
     process_tree_kill=True,

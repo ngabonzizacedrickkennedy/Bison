@@ -47,7 +47,7 @@ warn_unreachable = true
 disallow_any_explicit = false
 
 [[tool.mypy.overrides]]
-module = ["win32api", "win32con", "win32job"]
+module = ["win32api", "win32con", "win32event", "win32job", "win32process", "win32security"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

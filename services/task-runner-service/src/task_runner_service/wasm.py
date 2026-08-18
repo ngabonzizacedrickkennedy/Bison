@@ -47,7 +47,8 @@ BACKEND: SandboxBackend = SandboxBackend.wasm
 ACCEPTS: frozenset[ProgramKind] = frozenset({"wasm_module"})
 
 ENFORCEMENT = Enforcement(
-    filesystem_scope=True,
+    filesystem_write_scope=True,
+    filesystem_read_scope=True,
     network_isolation=True,
     memory_limit=True,
     process_tree_kill=True,

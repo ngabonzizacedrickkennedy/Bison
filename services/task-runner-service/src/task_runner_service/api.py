@@ -66,7 +66,8 @@ class Health(BaseModel):
 class BackendReport(BaseModel):
     backend: str
     accepts: list[str]
-    filesystem_scope: bool
+    filesystem_write_scope: bool
+    filesystem_read_scope: bool
     network_isolation: bool
     memory_limit: bool
     process_tree_kill: bool
@@ -90,7 +91,8 @@ async def sandboxes() -> list[BackendReport]:
         BackendReport(
             backend=sandbox.backend.value,
             accepts=sorted(sandbox.accepts),
-            filesystem_scope=sandbox.enforcement.filesystem_scope,
+            filesystem_write_scope=sandbox.enforcement.filesystem_write_scope,
+            filesystem_read_scope=sandbox.enforcement.filesystem_read_scope,
             network_isolation=sandbox.enforcement.network_isolation,
             memory_limit=sandbox.enforcement.memory_limit,
             process_tree_kill=sandbox.enforcement.process_tree_kill,
