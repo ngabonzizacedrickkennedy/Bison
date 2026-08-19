@@ -36,9 +36,11 @@ def build(runtime_dir: Path | None = None) -> dict[str, Sandbox]:
     available: dict[str, Sandbox] = {"wasm": WasmSandbox(runtime_dir)}
 
     if sys.platform == "win32":
+        from task_runner_service import integrity
         from task_runner_service.jobobject import JobObjectSandbox
 
-        available["job_object"] = JobObjectSandbox(runtime_dir)
+        if integrity.available():
+            available["job_object"] = JobObjectSandbox(runtime_dir)
 
     return available
 

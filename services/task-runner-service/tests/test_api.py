@@ -156,7 +156,7 @@ async def test_sandboxes_report_what_they_enforce(client: AsyncClient) -> None:
     assert reported["wasm"]["network_isolation"]
     assert reported["wasm"]["accepts"] == ["wasm_module"]
     assert not reported["job_object"]["network_isolation"]
-    assert not reported["job_object"]["filesystem_write_scope"]
+    assert reported["job_object"]["filesystem_write_scope"]
     assert not reported["job_object"]["filesystem_read_scope"]
 
 

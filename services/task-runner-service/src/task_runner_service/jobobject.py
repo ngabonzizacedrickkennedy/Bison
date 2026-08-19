@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pywintypes
 import win32api
 import win32con
 import win32job
 from bison_contracts import SandboxBackend
 
+from task_runner_service import integrity, process
 from task_runner_service.config import settings
 from task_runner_service.effects import observe, snapshot
+from task_runner_service.process import Launch
 from task_runner_service.relay import OutputRelay
 from task_runner_service.sandbox import (
     Enforcement,
@@ -34,7 +37,7 @@ BACKEND: SandboxBackend = SandboxBackend.job_object
 ACCEPTS: frozenset[ProgramKind] = frozenset({"native"})
 
 ENFORCEMENT = Enforcement(
-    filesystem_write_scope=False,
+    filesystem_write_scope=True,
     filesystem_read_scope=False,
     network_isolation=False,
     memory_limit=True,
@@ -44,8 +47,6 @@ ENFORCEMENT = Enforcement(
 BYTES_PER_MB = 1024 * 1024
 
 MAX_ACTIVE_PROCESSES = 32
-
-READ_CHUNK_BYTES = 64 * 1024
 
 TERMINATION_EXIT_CODE = 1
 
@@ -64,6 +65,23 @@ PROCESS_ACCESS: int = win32con.PROCESS_SET_QUOTA | win32con.PROCESS_TERMINATE
 class Execution:
     job: int
     reason: Termination | None
+
+
+@dataclass
+class Labels:
+    previous: dict[Path, str | None] = field(default_factory=dict)
+
+    def apply(self, directories: list[Path]) -> None:
+        for directory in directories:
+            self.previous[directory] = integrity.label_of(directory)
+            integrity.label_low(directory)
+
+    def restore(self) -> None:
+        for directory, sid in self.previous.items():
+            with suppress(BaseException):
+                integrity.apply_label(directory, sid)
+
+        self.previous.clear()
 
 
 def create_job(memory_mb: int) -> int:
@@ -148,38 +166,35 @@ class JobObjectSandbox:
 
         started = datetime.now(UTC)
         execution = Execution(job=create_job(request.limits.memory_mb), reason=None)
+        labels = Labels()
+        token = integrity.restricted_token()
 
         try:
-            process = await asyncio.create_subprocess_exec(
-                request.program,
-                *request.arguments,
-                cwd=request.working_directory,
-                env=dict(request.environment),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-        except OSError as error:
+            labels.apply([Path(path) for path in watched])
+            launch = self._start(request, token)
+        except BaseException:
+            labels.restore()
+            integrity.close(token)
             win32api.CloseHandle(execution.job)
 
-            raise InvalidSandboxRequestError(
-                f"{request.program!r} could not be started: {error.strerror or error}"
-            ) from error
+            raise
 
         self._running[request.step_id] = execution
 
         try:
-            enrol(execution.job, process.pid)
+            enrol(execution.job, launch.pid)
+            process.resume(launch)
 
             watchdog = asyncio.create_task(
                 self._watchdog(request.step_id, request.limits.wall_clock_seconds)
             )
 
             await asyncio.gather(
-                self._pump(relay, "stdout", process.stdout),
-                self._pump(relay, "stderr", process.stderr),
+                self._pump(relay, "stdout", launch.stdout),
+                self._pump(relay, "stderr", launch.stderr),
             )
 
-            code = await process.wait()
+            code = await process.wait(launch)
 
             watchdog.cancel()
 
@@ -189,6 +204,9 @@ class JobObjectSandbox:
             await relay.close()
         finally:
             del self._running[request.step_id]
+            process.close(launch)
+            labels.restore()
+            integrity.close(token)
             win32api.CloseHandle(execution.job)
 
         ended = datetime.now(UTC)
@@ -213,17 +231,26 @@ class JobObjectSandbox:
             ended_at=ended,
         )
 
+    def _start(self, request: SandboxRequest, token: int) -> Launch:
+        try:
+            return process.start(
+                request.program,
+                request.arguments,
+                Path(request.working_directory),
+                request.environment,
+                token,
+            )
+        except pywintypes.error as error:
+            raise InvalidSandboxRequestError(
+                f"{request.program!r} could not be started: {error.strerror or error}"
+            ) from error
+
     async def _watchdog(self, step_id: str, seconds: int) -> None:
         await asyncio.sleep(seconds)
         await self.terminate(step_id, "wall_clock")
 
-    async def _pump(
-        self, relay: OutputRelay, stream: OutputStream, reader: asyncio.StreamReader | None
-    ) -> None:
-        if reader is None:
-            return
-
-        while data := await reader.read(READ_CHUNK_BYTES):
+    async def _pump(self, relay: OutputRelay, stream: OutputStream, handle: int) -> None:
+        while data := await process.read(handle):
             await relay.write(stream, data)
 
             if relay.truncated:

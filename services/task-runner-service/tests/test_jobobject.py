@@ -21,6 +21,7 @@ from task_runner_service.sandbox import (
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="job objects are Windows only")
 
 if TYPE_CHECKING or sys.platform == "win32":
+    from task_runner_service import integrity
     from task_runner_service.jobobject import JobObjectSandbox
 
 ENVIRONMENT_KEYS = ("SYSTEMROOT", "PATH", "TEMP")
@@ -77,12 +78,12 @@ def build(workspace: Path, arguments: list[str], **overrides: object) -> Sandbox
     return SandboxRequest(**declared)  # type: ignore[arg-type]
 
 
-def test_the_backend_reports_what_it_does_not_enforce(sandbox: JobObjectSandbox) -> None:
+def test_the_backend_reports_what_it_enforces(sandbox: JobObjectSandbox) -> None:
     assert sandbox.backend == "job_object"
     assert sandbox.accepts == frozenset({"native"})
     assert sandbox.enforcement.process_tree_kill
     assert sandbox.enforcement.memory_limit
-    assert not sandbox.enforcement.filesystem_write_scope
+    assert sandbox.enforcement.filesystem_write_scope
     assert not sandbox.enforcement.filesystem_read_scope
     assert not sandbox.enforcement.network_isolation
 
@@ -279,3 +280,52 @@ async def test_a_step_may_run_again_after_it_finishes(
 ) -> None:
     assert succeeded(await sandbox.run(build(workspace, ["-c", "pass"]), Recorder()))
     assert succeeded(await sandbox.run(build(workspace, ["-c", "pass"]), Recorder()))
+
+
+async def test_a_write_outside_the_scope_is_denied(
+    sandbox: JobObjectSandbox, workspace: Path
+) -> None:
+    escaped = workspace.parent / "escaped.txt"
+    name = script(workspace, "escape", f"open(r'{escaped}', 'w').write('out')")
+
+    result = await sandbox.run(build(workspace, [name]), Recorder())
+
+    assert not escaped.exists()
+    assert result.exit_code != 0
+
+
+async def test_a_directory_created_outside_the_scope_is_denied(
+    sandbox: JobObjectSandbox, workspace: Path
+) -> None:
+    escaped = workspace.parent / "escaped"
+    name = script(workspace, "mkdir", f"import os;os.mkdir(r'{escaped}')")
+
+    result = await sandbox.run(build(workspace, [name]), Recorder())
+
+    assert not escaped.exists()
+    assert result.exit_code != 0
+
+
+async def test_a_read_outside_the_scope_is_still_allowed(
+    sandbox: JobObjectSandbox, workspace: Path
+) -> None:
+    readable = workspace.parent / "readable.txt"
+    readable.write_text("visible", newline="\n")
+
+    name = script(workspace, "read", f"print(open(r'{readable}').read())")
+    recorder = Recorder()
+
+    result = await sandbox.run(build(workspace, [name]), recorder)
+
+    assert recorder.text("stdout").strip() == "visible"
+    assert result.exit_code == 0
+
+
+async def test_the_scope_label_is_restored_after_a_run(
+    sandbox: JobObjectSandbox, workspace: Path
+) -> None:
+    before = integrity.label_of(workspace)
+
+    await sandbox.run(build(workspace, ["-c", "pass"]), Recorder())
+
+    assert integrity.label_of(workspace) == before
