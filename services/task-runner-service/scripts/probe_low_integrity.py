@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import os
 import shutil
-import sys
 import tempfile
 from pathlib import Path
 
@@ -38,6 +38,10 @@ TOKEN_ACCESS = (
 )
 
 WAIT_MILLISECONDS = 15000
+
+
+def windows() -> bool:
+    return os.name == "nt"
 
 
 def stage(message: str) -> None:
@@ -108,7 +112,7 @@ def launch(token: int, program: str, command: str, working_directory: Path) -> i
 
 
 def main() -> int:
-    if sys.platform != "win32":
+    if not windows():
         print("this probe only runs on windows")
 
         return 1
