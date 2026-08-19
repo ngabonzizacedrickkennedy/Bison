@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from task_runner_service import venvs
 from task_runner_service.backends import Binding, bind, build
+from task_runner_service.config import settings
 from task_runner_service.manifest import load_manifest
 from task_runner_service.sandbox import (
     Limits,
@@ -37,6 +40,7 @@ def limits_from(declared: dict[str, Any] | None) -> Limits:
 
 class Runner:
     def __init__(self, runtime_dir: Path | None = None) -> None:
+        self._runtime_dir = runtime_dir if runtime_dir else settings().data_dir / "runs"
         self._sandboxes = build(runtime_dir)
         self._bindings: dict[str, Binding] = {}
 
@@ -50,6 +54,18 @@ class Runner:
 
     def plan(self, request: SandboxRequest) -> Binding:
         return bind(load_manifest(), program_kind(request), self._sandboxes)
+
+    async def provision(self, request: SandboxRequest, key: str) -> SandboxRequest:
+        if program_kind(request) != "native":
+            return request
+
+        venv = await venvs.ensure(self._runtime_dir, key)
+
+        return replace(
+            request,
+            program=venvs.resolve(request.program, venv),
+            environment=venvs.overlay(request.environment, venv),
+        )
 
     async def terminate_all(self, reason: Termination) -> list[str]:
         stopped: list[str] = []

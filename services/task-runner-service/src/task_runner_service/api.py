@@ -21,6 +21,7 @@ from task_runner_service.execution import Runner, build_request
 from task_runner_service.manifest import ManifestUnavailableError
 from task_runner_service.sandbox import InvalidSandboxRequestError, ProgramKindUnsupportedError
 from task_runner_service.scope import ScopeRootError, StepRefusedError, assert_admissible
+from task_runner_service.venvs import EnvironmentUnavailableError
 
 BOUNDARY: Boundary = "immediate"
 
@@ -43,6 +44,7 @@ class TerminateBody(BaseModel):
 
 class RunBody(BaseModel):
     scope_root: str = Field(min_length=1)
+    task_id: str | None = None
     step: dict[str, Any]
     confirmed: bool = False
     program: str = Field(min_length=1)
@@ -142,7 +144,10 @@ async def run_step(step_id: str, body: RunBody) -> StreamingResponse:
     try:
         request = build_request(step_id, body.model_dump(exclude_none=True), body.scope_root)
         binding = runner.plan(request)
+        request = await runner.provision(request, body.task_id if body.task_id else step_id)
     except ManifestUnavailableError as unavailable:
+        raise HTTPException(status_code=503, detail=str(unavailable)) from unavailable
+    except EnvironmentUnavailableError as unavailable:
         raise HTTPException(status_code=503, detail=str(unavailable)) from unavailable
     except (KeyError, ValueError, InvalidSandboxRequestError, ScopeRootError) as invalid:
         raise HTTPException(status_code=422, detail=str(invalid)) from invalid
