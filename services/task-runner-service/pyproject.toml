@@ -10,6 +10,7 @@ dependencies = [
     "uvicorn>=0.34.0",
     "wasmtime>=47.0.0",
     "pywin32>=306 ; sys_platform == 'win32'",
+    "psutil>=7.2.2",
 ]
 
 [build-system]
@@ -48,6 +49,7 @@ disallow_any_explicit = false
 
 [[tool.mypy.overrides]]
 module = [
+    "psutil",
     "pywintypes",
     "win32api",
     "win32con",

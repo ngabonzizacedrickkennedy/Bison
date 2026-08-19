@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import socket
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -352,3 +353,32 @@ async def test_a_file_written_by_a_step_keeps_no_label(
     await sandbox.run(build(workspace, [name]), Recorder())
 
     assert integrity.label_of(workspace / "made.txt") is None
+
+
+async def test_a_port_opened_by_a_step_is_reported(
+    sandbox: JobObjectSandbox, workspace: Path
+) -> None:
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+
+    body = (
+        "import socket, time\n"
+        "s = socket.socket()\n"
+        f"s.bind(('127.0.0.1', {port}))\n"
+        "s.listen(1)\n"
+        "time.sleep(1.5)\n"
+    )
+    name = script(workspace, "listen", body)
+
+    result = await sandbox.run(build(workspace, [name]), Recorder())
+
+    assert port in result.ports_opened
+
+
+async def test_a_step_that_opens_no_port_reports_none(
+    sandbox: JobObjectSandbox, workspace: Path
+) -> None:
+    result = await sandbox.run(build(workspace, ["-c", "pass"]), Recorder())
+
+    assert result.ports_opened == []

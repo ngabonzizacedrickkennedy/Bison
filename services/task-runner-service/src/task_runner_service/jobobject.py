@@ -12,7 +12,7 @@ import win32con
 import win32job
 from bison_contracts import SandboxBackend
 
-from task_runner_service import integrity, process
+from task_runner_service import integrity, ports, process
 from task_runner_service.config import settings
 from task_runner_service.effects import observe, snapshot
 from task_runner_service.process import Launch
@@ -181,9 +181,12 @@ class JobObjectSandbox:
 
         self._running[request.step_id] = execution
 
+        watcher = ports.PortWatcher(launch.pid)
+
         try:
             enrol(execution.job, launch.pid)
             process.resume(launch)
+            watcher.start()
 
             watchdog = asyncio.create_task(
                 self._watchdog(request.step_id, request.limits.wall_clock_seconds)
@@ -203,6 +206,8 @@ class JobObjectSandbox:
 
             await relay.close()
         finally:
+            await watcher.stop()
+
             del self._running[request.step_id]
             process.close(launch)
             labels.restore()
@@ -224,7 +229,7 @@ class JobObjectSandbox:
             files_written_total=delta.written_total,
             files_deleted_total=delta.deleted_total,
             files_truncated=delta.truncated,
-            ports_opened=[],
+            ports_opened=watcher.observed,
             output_bytes=relay.bytes_written,
             output_truncated=relay.truncated,
             started_at=started,
