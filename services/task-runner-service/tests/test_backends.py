@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from bison_contracts import CapabilityManifest, SandboxBackend
 
+from task_runner_service import docker
 from task_runner_service.backends import Binding, NoSandboxAvailableError, bind, build, rank
 from task_runner_service.sandbox import (
     Enforcement,
@@ -184,3 +185,39 @@ def test_build_offers_wasm_everywhere_and_job_objects_on_windows(tmp_path: Path)
         assert "job_object" in constructed
     else:
         assert "job_object" not in constructed
+
+
+def test_docker_is_chosen_when_the_machine_offers_it_and_this_build_has_it() -> None:
+    available = sandboxes()
+    available["docker"] = FakeSandbox(SandboxBackend.docker, frozenset({"native"}))
+
+    chosen = bind(manifest("docker", ["docker", "job_object", "wasm"]), "native", available)
+
+    assert chosen.backend == SandboxBackend.docker
+    assert not chosen.degraded
+    assert chosen.reason is None
+
+
+def test_docker_does_not_take_a_wasm_module_it_cannot_run() -> None:
+    available = sandboxes()
+    available["docker"] = FakeSandbox(SandboxBackend.docker, frozenset({"native"}))
+
+    chosen = bind(manifest("docker", ["docker", "job_object", "wasm"]), "wasm_module", available)
+
+    assert chosen.backend == SandboxBackend.wasm
+    assert chosen.preferred == "docker"
+    assert chosen.degraded
+
+
+def test_build_offers_docker_only_when_the_cli_is_present(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runs = tmp_path.resolve() / "runs"
+
+    monkeypatch.setattr(docker, "available", lambda: True)
+
+    assert "docker" in build(runs)
+
+    monkeypatch.setattr(docker, "available", lambda: False)
+
+    assert "docker" not in build(runs)

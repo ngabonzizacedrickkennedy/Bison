@@ -7,6 +7,7 @@ from typing import Final
 
 from bison_contracts import CapabilityManifest, SandboxBackend
 
+from task_runner_service import docker
 from task_runner_service.sandbox import ProgramKind, Sandbox
 from task_runner_service.wasm import WasmSandbox
 
@@ -34,6 +35,9 @@ class Binding:
 
 def build(runtime_dir: Path | None = None) -> dict[str, Sandbox]:
     available: dict[str, Sandbox] = {"wasm": WasmSandbox(runtime_dir)}
+
+    if docker.available():
+        available["docker"] = docker.DockerSandbox(runtime_dir)
 
     if sys.platform == "win32":
         from task_runner_service import integrity
