@@ -329,3 +329,26 @@ async def test_the_scope_label_is_restored_after_a_run(
     await sandbox.run(build(workspace, ["-c", "pass"]), Recorder())
 
     assert integrity.label_of(workspace) == before
+
+
+async def test_a_file_that_already_existed_can_be_modified(
+    sandbox: JobObjectSandbox, workspace: Path
+) -> None:
+    existing = workspace / "existing.txt"
+    existing.write_text("before", newline="\n")
+
+    name = script(workspace, "edit", "open('existing.txt', 'w').write('after')")
+    result = await sandbox.run(build(workspace, [name]), Recorder())
+
+    assert existing.read_text() == "after"
+    assert result.exit_code == 0
+
+
+async def test_a_file_written_by_a_step_keeps_no_label(
+    sandbox: JobObjectSandbox, workspace: Path
+) -> None:
+    name = script(workspace, "create", "open('made.txt', 'w').write('done')")
+
+    await sandbox.run(build(workspace, [name]), Recorder())
+
+    assert integrity.label_of(workspace / "made.txt") is None
