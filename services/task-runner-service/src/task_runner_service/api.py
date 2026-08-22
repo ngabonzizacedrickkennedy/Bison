@@ -144,7 +144,8 @@ async def run_step(step_id: str, body: RunBody) -> StreamingResponse:
     try:
         request = build_request(step_id, body.model_dump(exclude_none=True), body.scope_root)
         binding = runner.plan(request)
-        request = await runner.provision(request, body.task_id if body.task_id else step_id)
+        key = body.task_id if body.task_id else step_id
+        request = await runner.provision(request, key, binding)
     except ManifestUnavailableError as unavailable:
         raise HTTPException(status_code=503, detail=str(unavailable)) from unavailable
     except EnvironmentUnavailableError as unavailable:

@@ -55,8 +55,10 @@ class Runner:
     def plan(self, request: SandboxRequest) -> Binding:
         return bind(load_manifest(), program_kind(request), self._sandboxes)
 
-    async def provision(self, request: SandboxRequest, key: str) -> SandboxRequest:
-        if program_kind(request) != "native":
+    async def provision(
+        self, request: SandboxRequest, key: str, binding: Binding
+    ) -> SandboxRequest:
+        if not binding.host_programs or program_kind(request) != "native":
             return request
 
         venv = await venvs.ensure(self._runtime_dir, key)

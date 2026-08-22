@@ -13,6 +13,8 @@ from task_runner_service.wasm import WasmSandbox
 
 STRENGTH_ORDER: Final[tuple[str, ...]] = ("docker", "job_object", "wasm")
 
+CONTAINERIZED: Final[frozenset[str]] = frozenset({"docker"})
+
 
 class NoSandboxAvailableError(RuntimeError):
     def __init__(self, kind: ProgramKind, offered: list[str]) -> None:
@@ -31,6 +33,10 @@ class Binding:
     preferred: str | None
     degraded: bool
     reason: str | None
+
+    @property
+    def host_programs(self) -> bool:
+        return self.backend.value not in CONTAINERIZED
 
 
 def build(runtime_dir: Path | None = None) -> dict[str, Sandbox]:
