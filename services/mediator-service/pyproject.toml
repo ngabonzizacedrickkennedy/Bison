@@ -8,6 +8,7 @@ dependencies = [
     "pydantic-settings>=2.7.0",
     "fastapi>=0.115.0",
     "uvicorn>=0.34.0",
+    "networkx>=3.4.0",
 ]
 
 [build-system]
@@ -42,6 +43,10 @@ python_version = "3.12"
 strict = true
 warn_unreachable = true
 disallow_any_explicit = false
+
+[[tool.mypy.overrides]]
+module = ["networkx"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
