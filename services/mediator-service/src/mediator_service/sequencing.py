@@ -13,26 +13,32 @@ class Node:
     position: int
 
 
-class DuplicateTaskError(RuntimeError):
+class SequencingError(RuntimeError):
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail)
+        self.detail = detail
+
+
+class DuplicateTaskError(SequencingError):
     def __init__(self, task_id: str) -> None:
         super().__init__(f"task {task_id} appears more than once in this tree")
         self.task_id = task_id
 
 
-class UnknownTaskError(RuntimeError):
+class UnknownTaskError(SequencingError):
     def __init__(self, task_id: str, context: str) -> None:
         super().__init__(f"unknown task {task_id}: {context}")
         self.task_id = task_id
         self.context = context
 
 
-class SelfDependencyError(RuntimeError):
+class SelfDependencyError(SequencingError):
     def __init__(self, task_id: str) -> None:
         super().__init__(f"task {task_id} declares itself as a dependency")
         self.task_id = task_id
 
 
-class BranchDependencyError(RuntimeError):
+class BranchDependencyError(SequencingError):
     def __init__(self, task_id: str, dependency_id: str) -> None:
         super().__init__(
             f"task {task_id} depends on {dependency_id}, which lies on its own branch; "
@@ -42,13 +48,13 @@ class BranchDependencyError(RuntimeError):
         self.dependency_id = dependency_id
 
 
-class ParentCycleError(RuntimeError):
+class ParentCycleError(SequencingError):
     def __init__(self, cycle: tuple[str, ...]) -> None:
         super().__init__(f"parent links form a cycle: {' -> '.join(cycle)}")
         self.cycle = cycle
 
 
-class DependencyCycleError(RuntimeError):
+class DependencyCycleError(SequencingError):
     def __init__(self, cycle: tuple[str, ...], lowered: bool) -> None:
         where = "once dependencies are lowered to leaves" if lowered else "as declared"
         super().__init__(f"dependencies form a cycle {where}: {' -> '.join(cycle)}")
