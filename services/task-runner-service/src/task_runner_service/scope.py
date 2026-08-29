@@ -8,7 +8,7 @@ SERVICE: Final[str] = "task-runner"
 
 MAX_PATHS_NAMED: Final[int] = 3
 
-UNRESOLVABLE_MARKERS: Final[tuple[str, ...]] = ("%", "$", "~")
+UNRESOLVABLE_MARKERS: Final[tuple[str, ...]] = ("%", "$")
 
 
 class ScopeRootError(RuntimeError):
@@ -60,11 +60,24 @@ def root_segments(scope_root: str) -> list[str]:
     return resolved
 
 
+def home_shorthand(path: PureWindowsPath) -> bool:
+    for part in path.parts:
+        if part in (".", ".."):
+            continue
+
+        return part == "~" or part.startswith("~\\") or part.startswith("~/")
+
+    return False
+
+
 def unresolvable(path: str) -> bool:
     if any(marker in path for marker in UNRESOLVABLE_MARKERS):
         return True
 
     candidate = PureWindowsPath(path)
+
+    if home_shorthand(candidate):
+        return True
 
     return bool(candidate.drive) and not candidate.is_absolute()
 
