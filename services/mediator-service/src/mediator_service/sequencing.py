@@ -63,13 +63,20 @@ class DependencyCycleError(SequencingError):
 
 
 class Ordering:
-    def __init__(self, order: tuple[str, ...], graph: nx.DiGraph) -> None:
+    def __init__(
+        self, order: tuple[str, ...], creation_order: tuple[str, ...], graph: nx.DiGraph
+    ) -> None:
         self._order = order
+        self._creation_order = creation_order
         self._graph = graph
 
     @property
     def order(self) -> tuple[str, ...]:
         return self._order
+
+    @property
+    def creation_order(self) -> tuple[str, ...]:
+        return self._creation_order
 
     @property
     def leaves(self) -> frozenset[str]:
@@ -207,6 +214,20 @@ def _lower(tree: nx.DiGraph, leaves: frozenset[str], index: dict[str, Node]) -> 
     return graph
 
 
+def _creation_graph(index: dict[str, Node]) -> nx.DiGraph:
+    graph = nx.DiGraph()
+    graph.add_nodes_from(index)
+
+    for node in index.values():
+        if node.parent_id is not None:
+            graph.add_edge(node.parent_id, node.id)
+
+        for dependency_id in node.depends_on:
+            graph.add_edge(dependency_id, node.id)
+
+    return graph
+
+
 def _document_keys(index: dict[str, Node]) -> dict[str, tuple[tuple[int, ...], str]]:
     keys: dict[str, tuple[tuple[int, ...], str]] = {}
 
@@ -243,4 +264,10 @@ def build(nodes: list[Node]) -> Ordering:
         for item in nx.lexicographical_topological_sort(graph, key=lambda item: keys[str(item)])
     )
 
-    return Ordering(order, graph)
+    creation = _creation_graph(index)
+    creation_order = tuple(
+        str(item)
+        for item in nx.lexicographical_topological_sort(creation, key=lambda item: keys[str(item)])
+    )
+
+    return Ordering(order, creation_order, graph)

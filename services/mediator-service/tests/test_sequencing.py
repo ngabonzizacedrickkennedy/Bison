@@ -218,3 +218,56 @@ def test_asking_about_a_task_outside_the_tree_is_refused() -> None:
 
     with pytest.raises(UnknownTaskError):
         ordering.dependencies("setup")
+
+
+def test_parents_are_always_created_before_their_children() -> None:
+    order = build(nested()).creation_order
+    positions = {ref: index for index, ref in enumerate(order)}
+
+    assert positions["setup"] < positions["setup.db"]
+    assert positions["setup"] < positions["setup.env"]
+    assert positions["build"] < positions["build.api"]
+
+
+def test_every_task_appears_exactly_once_in_the_creation_order() -> None:
+    order = build(nested()).creation_order
+
+    assert sorted(order) == sorted(item.id for item in nested())
+
+
+def test_a_dependency_declared_before_its_target_still_creates_in_the_right_order() -> None:
+    tree = [
+        node("consumer", depends_on=("producer",), position=0),
+        node("producer", position=1),
+    ]
+    order = build(tree).creation_order
+
+    assert order == ("producer", "consumer")
+
+
+def test_a_dependency_on_a_parent_creates_that_whole_branch_first() -> None:
+    order = build(nested()).creation_order
+    positions = {ref: index for index, ref in enumerate(order)}
+
+    assert positions["setup.db"] < positions["build"]
+    assert positions["setup.env"] < positions["build"]
+
+
+def test_the_creation_order_is_the_same_every_time() -> None:
+    assert build(nested()).creation_order == build(list(reversed(nested()))).creation_order
+
+
+def test_the_creation_order_agrees_with_the_execution_order_on_the_leaves() -> None:
+    ordering = build(nested())
+    positions = {ref: index for index, ref in enumerate(ordering.creation_order)}
+    leaves = [ref for ref in ordering.creation_order if ref in ordering.leaves]
+
+    assert leaves == list(ordering.order)
+    assert positions["setup.db"] < positions["build.api"]
+
+
+def test_the_creation_order_covers_parents_that_the_execution_order_leaves_out() -> None:
+    ordering = build(nested())
+
+    assert "setup" in ordering.creation_order
+    assert "setup" not in ordering.order
