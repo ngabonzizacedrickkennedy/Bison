@@ -107,6 +107,7 @@ async def create(
                 position=position,
                 description=str(step["description"]),
                 service=str(step["service"]),
+                action=step.get("action"),
                 requires_confirmation=bool(step.get("requires_confirmation", True)),
                 confirmation_reason=step.get("confirmation_reason"),
                 on_failure=str(step.get("on_failure", "abort")),

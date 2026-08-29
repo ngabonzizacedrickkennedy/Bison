@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
+from router_service.actions import payload as action_payload
 from router_service.gating import GatedStep
 from router_service.router import RouterRun
 
@@ -11,6 +12,7 @@ def step_payload(step: GatedStep) -> dict[str, Any]:
     return {
         "description": step.description,
         "service": step.service,
+        "action": action_payload(step.action) if step.action is not None else None,
         "requires_confirmation": step.requires_confirmation,
         "confirmation_reason": step.confirmation_reason,
         "on_failure": step.on_failure,

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import PureWindowsPath
 
+from router_service.actions import Action, installs_packages, written_paths
 from router_service.plan import Effects, ProposedStep, RouterDraft
 
 SAFE_FAILURE_POLICY = "abort"
@@ -20,6 +21,7 @@ class GatedStep:
     position: int
     description: str
     service: str
+    action: Action | None
     requires_confirmation: bool
     confirmation_reason: str | None
     on_failure: str
@@ -70,8 +72,24 @@ def outside(paths: list[str], root: list[str]) -> list[str]:
     return [path for path in paths if not within(path, root)]
 
 
-def reasons(step: ProposedStep, root: list[str]) -> list[str]:
-    effects = step.effects
+def reconciled(declared: Effects, action: Action | None) -> Effects:
+    if action is None:
+        return declared
+
+    undeclared = [path for path in written_paths(action) if path not in declared.writes_paths]
+    installs = declared.installs_packages or installs_packages(action)
+
+    if not undeclared and installs == declared.installs_packages:
+        return declared
+
+    return replace(
+        declared,
+        writes_paths=declared.writes_paths + undeclared,
+        installs_packages=installs,
+    )
+
+
+def reasons(effects: Effects, root: list[str]) -> list[str]:
     collected: list[str] = []
 
     if effects.deletes_paths:
@@ -104,7 +122,8 @@ def reasons(step: ProposedStep, root: list[str]) -> list[str]:
 
 
 def gate(step: ProposedStep, position: int, root: list[str]) -> GatedStep:
-    triggered = reasons(step, root)
+    effects = reconciled(step.effects, step.action)
+    triggered = reasons(effects, root)
     confirm = bool(triggered)
     demoted = confirm and step.on_failure == "continue"
 
@@ -112,12 +131,13 @@ def gate(step: ProposedStep, position: int, root: list[str]) -> GatedStep:
         position=position,
         description=step.description,
         service=step.service,
+        action=step.action,
         requires_confirmation=confirm,
         confirmation_reason="; ".join(triggered) if confirm else None,
         on_failure=SAFE_FAILURE_POLICY if demoted else step.on_failure,
-        reversible=step.effects.reversible,
+        reversible=effects.reversible,
         criterion_refs=step.criterion_refs,
-        effects=step.effects,
+        effects=effects,
     )
 
 

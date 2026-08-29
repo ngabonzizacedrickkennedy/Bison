@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from router_service.actions import RunPythonModule
+from router_service.actions import InstallPythonPackages, RunPythonModule, WriteFile
 from router_service.gating import build
 from router_service.persist import plan_payload
 from router_service.plan import Effects, ProposedStep, RouterDraft
@@ -124,3 +124,52 @@ def test_no_engine_is_targeted_before_phase_sixteen() -> None:
 
     assert payload["target_engine_id"] is None
     assert payload["target_model_id"] == "qwen2.5-coder:7b"
+
+
+def test_a_stored_step_carries_its_action() -> None:
+    action = WriteFile(path=SCOPE + r"\reconcile.py", content="print(1)\n")
+    payload = plan_payload(run(step(action=action)), REQUEST, SCOPE)
+    stored = payload["steps"][0]["action"]
+
+    assert stored["type"] == "write_file"
+    assert stored["content"] == "print(1)\n"
+
+
+def test_a_stored_action_names_its_type_so_it_can_be_read_back() -> None:
+    payload = plan_payload(
+        run(step(action=InstallPythonPackages(packages=("fastapi", "uvicorn")))),
+        REQUEST,
+        SCOPE,
+    )
+    stored = payload["steps"][0]["action"]
+
+    assert stored["type"] == "install_python_packages"
+    assert stored["packages"] == ["fastapi", "uvicorn"]
+
+
+def test_a_step_without_an_action_stores_null_rather_than_omitting_it() -> None:
+    payload = plan_payload(run(step(service="dev-env", action=None)), REQUEST, SCOPE)
+
+    assert "action" in payload["steps"][0]
+    assert payload["steps"][0]["action"] is None
+
+
+def test_arguments_reach_storage_as_a_list() -> None:
+    payload = plan_payload(
+        run(step(action=RunPythonModule(module="pytest", arguments=("-q", "tests")))),
+        REQUEST,
+        SCOPE,
+    )
+
+    assert payload["steps"][0]["action"]["arguments"] == ["-q", "tests"]
+
+
+def test_an_undeclared_write_reaches_storage_in_the_effects() -> None:
+    target = SCOPE + r"\reconcile.py"
+    payload = plan_payload(
+        run(step(action=WriteFile(path=target, content=""), effects=effects(writes_paths=[]))),
+        REQUEST,
+        SCOPE,
+    )
+
+    assert payload["steps"][0]["effects"]["writes_paths"] == [target]

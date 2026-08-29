@@ -931,6 +931,7 @@ async def answer_question(question_id: str, payload: AnswerBody, session: Sessio
 class StepBody(BaseModel):
     description: str = Field(min_length=1, max_length=500)
     service: Literal["task-runner", "automation", "dev-env", "engine-session"]
+    action: dict[str, Any] | None = None
     requires_confirmation: bool = True
     confirmation_reason: str | None = None
     on_failure: Literal["abort", "retry", "replan", "continue"] = "abort"
@@ -963,6 +964,7 @@ class StepRead(BaseModel):
     position: int
     description: str
     service: str
+    action: dict[str, Any] | None
     requires_confirmation: bool
     confirmation_reason: str | None
     on_failure: str
@@ -1003,6 +1005,7 @@ def to_step(row: Any) -> StepRead:
         position=row.position,
         description=row.description,
         service=row.service,
+        action=row.action,
         requires_confirmation=row.requires_confirmation,
         confirmation_reason=row.confirmation_reason,
         on_failure=row.on_failure,

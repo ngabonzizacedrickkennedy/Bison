@@ -368,6 +368,7 @@ class ActionStepRow(Base):
     reversible: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     criterion_refs: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     effects: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    action: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     state: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
 
 

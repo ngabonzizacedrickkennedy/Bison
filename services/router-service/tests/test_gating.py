@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from router_service.actions import RunPythonModule
+from router_service.actions import InstallPythonPackages, RunPythonModule, WriteFile
 from router_service.gating import PlanRejectedError, build
 from router_service.plan import Effects, ProposedStep, RouterDraft
 
@@ -192,3 +192,141 @@ def test_a_task_with_no_criteria_accepts_empty_refs() -> None:
 def test_a_relative_scope_root_is_refused() -> None:
     with pytest.raises(ValueError, match="absolute path"):
         build(draft(), r"workspace\bison", [CRITERION])
+
+
+def test_a_declared_write_is_gated_when_it_leaves_scope() -> None:
+    outside_scope = r"C:\Users\dev\Desktop\notes.txt"
+    plan = build(
+        draft(
+            step(
+                action=WriteFile(path=outside_scope, content=""),
+                effects=effects(writes_paths=[outside_scope]),
+            )
+        ),
+        SCOPE,
+        [CRITERION],
+    )
+
+    assert plan.steps[0].requires_confirmation is True
+    assert "outside the project directory" in str(plan.steps[0].confirmation_reason)
+
+
+def test_an_undeclared_write_cannot_slip_past_the_gate() -> None:
+    outside_scope = r"C:\Users\dev\Desktop\notes.txt"
+    plan = build(
+        draft(
+            step(
+                action=WriteFile(path=outside_scope, content=""),
+                effects=effects(writes_paths=[]),
+            )
+        ),
+        SCOPE,
+        [CRITERION],
+    )
+
+    assert plan.steps[0].requires_confirmation is True
+    assert "outside the project directory" in str(plan.steps[0].confirmation_reason)
+
+
+def test_an_undeclared_write_is_added_to_the_effects_that_are_stored() -> None:
+    target = SCOPE + r"\reconcile.py"
+    plan = build(
+        draft(
+            step(
+                action=WriteFile(path=target, content=""),
+                effects=effects(writes_paths=[]),
+            )
+        ),
+        SCOPE,
+        [CRITERION],
+    )
+
+    assert plan.steps[0].effects.writes_paths == [target]
+
+
+def test_a_write_already_declared_is_not_recorded_twice() -> None:
+    target = SCOPE + r"\reconcile.py"
+    plan = build(
+        draft(
+            step(
+                action=WriteFile(path=target, content=""),
+                effects=effects(writes_paths=[target]),
+            )
+        ),
+        SCOPE,
+        [CRITERION],
+    )
+
+    assert plan.steps[0].effects.writes_paths == [target]
+
+
+def test_a_write_inside_scope_still_needs_no_approval() -> None:
+    plan = build(
+        draft(
+            step(
+                action=WriteFile(path=SCOPE + r"\reconcile.py", content=""),
+                effects=effects(writes_paths=[]),
+            )
+        ),
+        SCOPE,
+        [CRITERION],
+    )
+
+    assert plan.steps[0].requires_confirmation is False
+
+
+def test_an_undeclared_install_cannot_slip_past_the_gate() -> None:
+    plan = build(
+        draft(
+            step(
+                action=InstallPythonPackages(packages=("fastapi",)),
+                effects=effects(installs_packages=False),
+            )
+        ),
+        SCOPE,
+        [CRITERION],
+    )
+
+    assert plan.steps[0].requires_confirmation is True
+    assert "installs packages" in str(plan.steps[0].confirmation_reason)
+    assert plan.steps[0].effects.installs_packages is True
+
+
+def test_a_step_that_runs_something_declares_no_extra_paths() -> None:
+    plan = build(
+        draft(step(action=RunPythonModule(module="pytest", arguments=("-q",)))),
+        SCOPE,
+        [CRITERION],
+    )
+
+    assert plan.steps[0].effects.writes_paths == []
+    assert plan.steps[0].requires_confirmation is False
+
+
+def test_the_action_survives_gating() -> None:
+    action = WriteFile(path=SCOPE + r"\reconcile.py", content="print(1)\n")
+    plan = build(draft(step(action=action)), SCOPE, [CRITERION])
+
+    assert plan.steps[0].action == action
+
+
+def test_a_step_with_no_action_carries_none_through_gating() -> None:
+    plan = build(draft(step(service="automation", action=None)), SCOPE, [CRITERION])
+
+    assert plan.steps[0].action is None
+
+
+def test_an_undeclared_escape_demotes_continue_to_abort() -> None:
+    plan = build(
+        draft(
+            step(
+                action=WriteFile(path=r"C:\Windows\system32\drivers\etc\hosts", content=""),
+                effects=effects(writes_paths=[]),
+                on_failure="continue",
+            )
+        ),
+        SCOPE,
+        [CRITERION],
+    )
+
+    assert plan.steps[0].on_failure == "abort"
