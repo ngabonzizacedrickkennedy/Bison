@@ -51,16 +51,49 @@ def effects_payload() -> st.SearchStrategy[dict[str, Any]]:
     )
 
 
-def step_payload(criterion_ids: list[str]) -> st.SearchStrategy[dict[str, Any]]:
-    return st.fixed_dictionaries(
-        {
-            "description": st.text(min_size=1, max_size=200).filter(lambda t: t.strip()),
-            "service": st.sampled_from(sorted(SERVICES)),
-            "effects": effects_payload(),
-            "on_failure": st.sampled_from(sorted(FAILURE_POLICIES)),
-            "criterion_refs": st.lists(st.sampled_from(criterion_ids), min_size=1, max_size=3),
-        }
+def action_payload() -> st.SearchStrategy[dict[str, Any]]:
+    names = st.text(min_size=1, max_size=30).filter(lambda t: t.strip())
+    arguments = st.lists(st.text(max_size=20), max_size=3)
+
+    return st.one_of(
+        st.fixed_dictionaries(
+            {"type": st.just("write_file"), "path": names, "content": st.text(max_size=60)}
+        ),
+        st.fixed_dictionaries(
+            {
+                "type": st.just("run_python_script"),
+                "script_path": names,
+                "arguments": arguments,
+            }
+        ),
+        st.fixed_dictionaries(
+            {"type": st.just("run_python_module"), "module": names, "arguments": arguments}
+        ),
+        st.fixed_dictionaries(
+            {
+                "type": st.just("install_python_packages"),
+                "packages": st.lists(names, min_size=1, max_size=3),
+            }
+        ),
     )
+
+
+def step_payload(criterion_ids: list[str]) -> st.SearchStrategy[dict[str, Any]]:
+    def with_service(service: str) -> st.SearchStrategy[dict[str, Any]]:
+        chosen: st.SearchStrategy[Any] = action_payload() if service == "task-runner" else st.none()
+
+        return st.fixed_dictionaries(
+            {
+                "description": st.text(min_size=1, max_size=200).filter(lambda t: t.strip()),
+                "service": st.just(service),
+                "action": chosen,
+                "effects": effects_payload(),
+                "on_failure": st.sampled_from(sorted(FAILURE_POLICIES)),
+                "criterion_refs": st.lists(st.sampled_from(criterion_ids), min_size=1, max_size=3),
+            }
+        )
+
+    return st.sampled_from(sorted(SERVICES)).flatmap(with_service)
 
 
 def plan_payload(criterion_ids: list[str]) -> st.SearchStrategy[dict[str, Any]]:

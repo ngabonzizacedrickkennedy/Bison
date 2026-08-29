@@ -4,6 +4,9 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from router_service.actions import Action, ActionSpecError
+from router_service.actions import parse_for as parse_action
+
 INTENTS = frozenset({"chat", "dev_task", "automation_task", "script_task", "account_action"})
 SERVICES = frozenset({"task-runner", "automation", "dev-env", "engine-session"})
 FAILURE_POLICIES = frozenset({"abort", "retry", "replan", "continue"})
@@ -35,6 +38,7 @@ class Effects:
 class ProposedStep:
     description: str
     service: str
+    action: Action | None
     effects: Effects
     on_failure: str
     criterion_refs: list[str]
@@ -143,13 +147,23 @@ def parse_policy(payload: dict[str, Any], position: int) -> str:
     return one_of(value, FAILURE_POLICIES, f"steps[{position}].on_failure")
 
 
+def parse_action_for(entry: dict[str, Any], service: str, position: int) -> Action | None:
+    try:
+        return parse_action(entry.get("action"), service, f"steps[{position}].action")
+    except ActionSpecError as error:
+        raise RouterParseError(error.detail) from error
+
+
 def parse_step(entry: Any, position: int) -> ProposedStep:
     if not isinstance(entry, dict):
         raise RouterParseError(f"steps[{position}] must be an object")
 
+    service = one_of(entry.get("service"), SERVICES, f"steps[{position}].service")
+
     return ProposedStep(
         description=text_field(entry, "description", MAX_DESCRIPTION_CHARS),
-        service=one_of(entry.get("service"), SERVICES, f"steps[{position}].service"),
+        service=service,
+        action=parse_action_for(entry, service, position),
         effects=parse_effects(entry.get("effects")),
         on_failure=parse_policy(entry, position),
         criterion_refs=text_list(entry, "criterion_refs"),

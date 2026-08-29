@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from router_service.actions import RunPythonModule
 from router_service.gating import PlanRejectedError, build
 from router_service.plan import Effects, ProposedStep, RouterDraft
 
@@ -28,6 +29,7 @@ def step(**overrides: object) -> ProposedStep:
     base: dict[str, object] = {
         "description": "Write the reconciliation module",
         "service": "task-runner",
+        "action": RunPythonModule(module="pytest", arguments=()),
         "effects": effects(),
         "on_failure": "abort",
         "criterion_refs": [CRITERION],

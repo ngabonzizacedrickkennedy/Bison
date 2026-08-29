@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 
+from router_service.actions import RunPythonModule, WriteFile
 from router_service.plan import MAX_STEPS, RouterParseError, parse
 
 
@@ -23,10 +24,22 @@ def effects(**overrides: Any) -> dict[str, Any]:
     return base
 
 
+def action(**overrides: Any) -> dict[str, Any]:
+    base: dict[str, Any] = {
+        "type": "write_file",
+        "path": "src/reconcile.py",
+        "content": "def reconcile():\n    return []\n",
+    }
+    base.update(overrides)
+
+    return base
+
+
 def step(**overrides: Any) -> dict[str, Any]:
     base: dict[str, Any] = {
         "description": "Write the reconciliation module",
         "service": "task-runner",
+        "action": action(),
         "effects": effects(),
         "on_failure": "abort",
         "criterion_refs": ["c1"],
@@ -168,3 +181,58 @@ def test_rejects_paths_that_are_not_an_array() -> None:
 def test_rejects_a_missing_rationale() -> None:
     with pytest.raises(RouterParseError, match="rationale must be"):
         parse(payload(rationale=""))
+
+
+def test_a_task_runner_step_carries_the_action_it_declared() -> None:
+    parsed = parse(payload()).steps[0]
+
+    assert isinstance(parsed.action, WriteFile)
+    assert parsed.action.path == "src/reconcile.py"
+
+
+def test_content_reaches_the_parser_exactly_as_written() -> None:
+    body = "import os\n\n\nif __name__ == '__main__':\n    print(len(os.listdir('.')))\n"
+    parsed = parse(payload(steps=[step(action=action(content=body))])).steps[0]
+
+    assert isinstance(parsed.action, WriteFile)
+    assert parsed.action.content == body
+
+
+def test_a_step_for_another_service_carries_no_action() -> None:
+    parsed = parse(
+        payload(steps=[step(service="automation", action=None, criterion_refs=["c1"])])
+    ).steps[0]
+
+    assert parsed.action is None
+
+
+def test_a_task_runner_step_without_an_action_is_refused() -> None:
+    with pytest.raises(RouterParseError, match=r"steps\[0\]\.action is required"):
+        parse(payload(steps=[step(action=None)]))
+
+
+def test_an_action_on_a_service_that_cannot_run_one_is_refused() -> None:
+    with pytest.raises(RouterParseError, match="must be null"):
+        parse(payload(steps=[step(service="dev-env")]))
+
+
+def test_an_action_fault_is_reported_as_a_parse_failure() -> None:
+    with pytest.raises(RouterParseError, match="not an action this machine performs"):
+        parse(payload(steps=[step(action=action(type="run_shell"))]))
+
+
+def test_an_action_fault_names_the_step_it_came_from() -> None:
+    steps = [step(), step(action=action(type="run_shell"))]
+
+    with pytest.raises(RouterParseError, match=r"steps\[1\]\.action"):
+        parse(payload(steps=steps))
+
+
+def test_a_shell_command_cannot_reach_the_parser_as_an_action() -> None:
+    shell = action(type="run_python_module", module="pytest -q tests")
+    del shell["path"]
+    del shell["content"]
+    parsed = parse(payload(steps=[step(action={**shell, "arguments": []})])).steps[0]
+
+    assert isinstance(parsed.action, RunPythonModule)
+    assert parsed.action.module == "pytest -q tests"
