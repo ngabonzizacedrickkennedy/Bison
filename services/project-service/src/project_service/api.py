@@ -189,6 +189,7 @@ class CriterionRead(BaseModel):
     task_id: str
     statement: str
     check_kind: str
+    check_spec: dict[str, object] | None
     weight: int
     status: str
     status_reason: str | None

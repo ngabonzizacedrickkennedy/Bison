@@ -5,6 +5,7 @@ export * from "./work.js";
 export * from "./understanding.js";
 export * from "./verification.js";
 export * from "./execution.js";
+export * from "./actions.js";
 export * from "./models.js";
 export * from "./streaming.js";
 export * from "./prompts.js";
