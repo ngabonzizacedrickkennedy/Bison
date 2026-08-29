@@ -228,11 +228,16 @@ async def test_the_execution_order_is_returned() -> None:
 async def test_both_models_and_prompts_are_reported() -> None:
     response = await call(Models(APPROACH, tree_json()), Upstream())
     body = response.json()
+    resolved = settings()
 
     assert body["engine_model_id"] == "anthropic/claude-sonnet-4"
     assert body["mediator_model_id"] == "qwen2.5-coder:7b"
-    assert body["engine_prompt"] == "engine.v1"
-    assert body["mediator_prompt"] == "mediator.v1"
+    assert body["engine_prompt"] == (
+        f"{resolved.engine_prompt_name}.{resolved.engine_prompt_version}"
+    )
+    assert body["mediator_prompt"] == (
+        f"{resolved.mediator_prompt_name}.{resolved.mediator_prompt_version}"
+    )
 
 
 async def test_a_supplied_request_id_is_echoed() -> None:
@@ -348,3 +353,17 @@ async def test_the_brief_is_read_before_any_model_is_called() -> None:
     await call(Models(), upstream)
 
     assert upstream.sent == [f"/projects/{PROJECT_ID}/brief"]
+
+
+async def test_an_unknown_prompt_version_is_reported_as_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("BISON_MEDIATOR_MEDIATOR_PROMPT_VERSION", "v99")
+    settings.cache_clear()
+
+    response = await call(Models(APPROACH, tree_json()), Upstream())
+    body = response.json()
+
+    assert response.status_code == 503
+    assert body["error"] == "prompt_missing"
+    assert "pnpm codegen" in body["detail"]

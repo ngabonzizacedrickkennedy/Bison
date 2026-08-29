@@ -128,6 +128,11 @@ async def on_brief_missing(request: Request, exc: BriefUnavailableError) -> JSON
     return JSONResponse(status_code=409, content={"error": "no_brief", "detail": str(exc)})
 
 
+@app.exception_handler(FileNotFoundError)
+async def on_prompt_missing(request: Request, exc: FileNotFoundError) -> JSONResponse:
+    return JSONResponse(status_code=503, content={"error": "prompt_missing", "detail": str(exc)})
+
+
 @app.exception_handler(ManifestUnavailableError)
 async def on_manifest_missing(request: Request, exc: ManifestUnavailableError) -> JSONResponse:
     return JSONResponse(status_code=503, content={"error": "no_manifest", "detail": str(exc)})
