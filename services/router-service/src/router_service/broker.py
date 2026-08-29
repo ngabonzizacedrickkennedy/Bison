@@ -4,7 +4,7 @@ from typing import Any
 
 import httpx
 
-BINDING_ROLE = "mediator"
+BINDING_ROLE = "engine"
 
 
 class BrokerError(RuntimeError):
