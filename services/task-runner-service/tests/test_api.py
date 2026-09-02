@@ -299,3 +299,119 @@ async def test_terminating_an_unknown_step_reports_false(client: AsyncClient) ->
         response = await client.post("/steps/absent/terminate", json={"actor": "cedrick"})
 
     assert response.json() == {"terminated": False}
+
+
+def write_body(scope: Path, **overrides: object) -> dict[str, Any]:
+    declared: dict[str, Any] = {
+        "scope_root": str(scope),
+        "step": {"service": "task-runner", "effects": effects()},
+        "confirmed": False,
+        "path": str(scope / "main.py"),
+        "content": "print('hello')\n",
+    }
+    declared.update(overrides)
+
+    return declared
+
+
+def sole_event(payload: str) -> dict[str, Any]:
+    lines = [line for line in payload.splitlines() if line.strip()]
+
+    assert len(lines) == 1
+
+    parsed: Any = json.loads(lines[0])
+
+    assert isinstance(parsed, dict)
+
+    return parsed
+
+
+async def test_a_write_reports_the_file_it_created(client: AsyncClient, scope_dir: Path) -> None:
+    async with client:
+        response = await client.post("/steps/s-1/write", json=write_body(scope_dir))
+
+    event = sole_event(response.text)
+
+    assert response.status_code == 200
+    assert event["event"] == "write"
+    assert event["step_id"] == "s-1"
+    assert event["error_message"] is None
+    assert len(event["files_written"]) == 1
+
+
+async def test_a_written_file_actually_lands_on_disk(client: AsyncClient, scope_dir: Path) -> None:
+    async with client:
+        await client.post("/steps/s-1/write", json=write_body(scope_dir))
+
+    assert (scope_dir / "main.py").read_bytes() == b"print('hello')\n"
+
+
+async def test_a_write_streams_ndjson_like_a_run(client: AsyncClient, scope_dir: Path) -> None:
+    async with client:
+        response = await client.post("/steps/s-1/write", json=write_body(scope_dir))
+
+    assert response.headers["content-type"].startswith("application/x-ndjson")
+    assert response.text.endswith("\n")
+
+
+@pytest.fixture
+def escape_path(tmp_path: Path) -> Path:
+    return tmp_path.resolve() / "escape.txt"
+
+
+async def test_a_write_outside_the_scope_is_refused(
+    client: AsyncClient, scope_dir: Path, escape_path: Path
+) -> None:
+    escape = escape_path
+
+    async with client:
+        response = await client.post(
+            "/steps/s-1/write", json=write_body(scope_dir, path=str(escape))
+        )
+
+    assert response.status_code == 403
+    assert not escape.exists()
+
+
+async def test_a_gated_write_is_refused_without_confirmation(
+    client: AsyncClient, scope_dir: Path
+) -> None:
+    gated = {"service": "task-runner", "effects": effects(network=True)}
+
+    async with client:
+        response = await client.post(
+            "/steps/s-1/write", json=write_body(scope_dir, step=gated, confirmed=False)
+        )
+
+    assert response.status_code == 403
+    assert not (scope_dir / "main.py").exists()
+
+
+async def test_a_gated_write_proceeds_once_confirmed(client: AsyncClient, scope_dir: Path) -> None:
+    gated = {"service": "task-runner", "effects": effects(network=True)}
+
+    async with client:
+        response = await client.post(
+            "/steps/s-1/write", json=write_body(scope_dir, step=gated, confirmed=True)
+        )
+
+    assert response.status_code == 200
+    assert (scope_dir / "main.py").is_file()
+
+
+async def test_a_halted_runner_writes_nothing(client: AsyncClient, scope_dir: Path) -> None:
+    async with client:
+        await client.post("/halt", json=signal())
+        response = await client.post("/steps/s-1/write", json=write_body(scope_dir))
+
+    assert response.status_code == 409
+    assert not (scope_dir / "main.py").exists()
+
+
+async def test_a_write_resumes_after_a_halt_is_lifted(client: AsyncClient, scope_dir: Path) -> None:
+    async with client:
+        await client.post("/halt", json=signal())
+        await client.post("/halt/resume", json={"actor": "test"})
+        response = await client.post("/steps/s-1/write", json=write_body(scope_dir))
+
+    assert response.status_code == 200

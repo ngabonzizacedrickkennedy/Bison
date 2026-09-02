@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import Any
 
 from bison_contracts.halt import (
@@ -19,9 +20,15 @@ from task_runner_service.backends import NoSandboxAvailableError
 from task_runner_service.config import settings
 from task_runner_service.execution import Runner, build_request
 from task_runner_service.manifest import ManifestUnavailableError
-from task_runner_service.sandbox import InvalidSandboxRequestError, ProgramKindUnsupportedError
+from task_runner_service.sandbox import (
+    InvalidSandboxRequestError,
+    Mount,
+    ProgramKindUnsupportedError,
+)
 from task_runner_service.scope import ScopeRootError, StepRefusedError, assert_admissible
+from task_runner_service.stream import encode, write_event
 from task_runner_service.venvs import EnvironmentUnavailableError
+from task_runner_service.writes import WriteRefusedError, perform
 
 BOUNDARY: Boundary = "immediate"
 
@@ -54,6 +61,15 @@ class RunBody(BaseModel):
     environment: dict[str, str] = Field(default_factory=dict)
     network: bool = False
     limits: dict[str, int] | None = None
+
+
+class WriteBody(BaseModel):
+    scope_root: str = Field(min_length=1)
+    task_id: str | None = None
+    step: dict[str, Any]
+    confirmed: bool = False
+    path: str = Field(min_length=1)
+    content: str
 
 
 class Health(BaseModel):
@@ -163,3 +179,32 @@ async def run_step(step_id: str, body: RunBody) -> StreamingResponse:
             "x-bison-sandbox-degraded": "true" if binding.degraded else "false",
         },
     )
+
+
+@app.post("/steps/{step_id}/write")
+async def write_step(step_id: str, body: WriteBody) -> StreamingResponse:
+    try:
+        halt_state.guard()
+    except HaltedError as halted:
+        raise HTTPException(status_code=409, detail=str(halted)) from halted
+
+    try:
+        assert_admissible(body.step, body.scope_root, body.confirmed)
+    except StepRefusedError as refused:
+        raise HTTPException(status_code=403, detail=str(refused)) from refused
+    except ScopeRootError as invalid:
+        raise HTTPException(status_code=422, detail=str(invalid)) from invalid
+
+    mounts = [Mount(path=body.scope_root, writable=True)]
+
+    try:
+        result = perform(step_id, body.path, body.content, mounts)
+    except WriteRefusedError as refused:
+        raise HTTPException(status_code=403, detail=refused.detail) from refused
+    except ScopeRootError as invalid:
+        raise HTTPException(status_code=422, detail=str(invalid)) from invalid
+
+    async def single() -> AsyncIterator[bytes]:
+        yield encode(write_event(result))
+
+    return StreamingResponse(single(), media_type=NDJSON)

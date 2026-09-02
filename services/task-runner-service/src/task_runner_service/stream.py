@@ -7,6 +7,7 @@ from dataclasses import asdict
 from typing import Any
 
 from task_runner_service.sandbox import OutputChunk, SandboxResult
+from task_runner_service.writes import WriteResult
 
 
 def output_event(chunk: OutputChunk) -> dict[str, Any]:
@@ -26,6 +27,14 @@ def result_event(result: SandboxResult) -> dict[str, Any]:
     payload["ended_at"] = result.ended_at.isoformat()
 
     return {"event": "result", **payload}
+
+
+def write_event(result: WriteResult) -> dict[str, Any]:
+    payload = asdict(result)
+    payload["started_at"] = result.started_at.isoformat()
+    payload["ended_at"] = result.ended_at.isoformat()
+
+    return {"event": "write", **payload}
 
 
 def error_event(step_id: str, detail: str) -> dict[str, Any]:
