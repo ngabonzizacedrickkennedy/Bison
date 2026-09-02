@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
@@ -10,10 +10,11 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict
 
 from router_service import router
+from router_service.actions import payload as action_payload
 from router_service.broker import BrokerClient, BrokerError, BrokerUnreachableError
 from router_service.config import settings
 from router_service.context import RouterContext
-from router_service.gating import PlanRejectedError
+from router_service.gating import GatedStep, PlanRejectedError
 from router_service.persist import plan_payload
 from router_service.plan import RouterParseError
 from router_service.upstream import (
@@ -52,6 +53,7 @@ class StepRead(BaseModel):
     position: int
     description: str
     service: str
+    action: dict[str, Any] | None
     requires_confirmation: bool
     confirmation_reason: str | None
     on_failure: str
@@ -164,6 +166,30 @@ async def health() -> Health:
     )
 
 
+def step_read(step: GatedStep, step_id: str) -> StepRead:
+    return StepRead(
+        step_id=step_id,
+        position=step.position,
+        description=step.description,
+        service=step.service,
+        action=action_payload(step.action) if step.action is not None else None,
+        requires_confirmation=step.requires_confirmation,
+        confirmation_reason=step.confirmation_reason,
+        on_failure=step.on_failure,
+        reversible=step.reversible,
+        criterion_refs=step.criterion_refs,
+        effects=EffectsRead(
+            writes_paths=step.effects.writes_paths,
+            deletes_paths=step.effects.deletes_paths,
+            network=step.effects.network,
+            installs_packages=step.effects.installs_packages,
+            needs_credentials=step.effects.needs_credentials,
+            drives_input=step.effects.drives_input,
+            reversible=step.effects.reversible,
+        ),
+    )
+
+
 @app.post("/projects/{project_id}/tasks/{task_id}/plan")
 async def plan_task(project_id: str, task_id: str, request_id: str | None = None) -> PlanRead:
     resolved = settings()
@@ -213,29 +239,7 @@ async def plan_task(project_id: str, task_id: str, request_id: str | None = None
         scope_root=scope_root,
         intent=outcome.plan.intent,
         rationale=outcome.plan.rationale,
-        steps=[
-            StepRead(
-                step_id=identities[step.position],
-                position=step.position,
-                description=step.description,
-                service=step.service,
-                requires_confirmation=step.requires_confirmation,
-                confirmation_reason=step.confirmation_reason,
-                on_failure=step.on_failure,
-                reversible=step.reversible,
-                criterion_refs=step.criterion_refs,
-                effects=EffectsRead(
-                    writes_paths=step.effects.writes_paths,
-                    deletes_paths=step.effects.deletes_paths,
-                    network=step.effects.network,
-                    installs_packages=step.effects.installs_packages,
-                    needs_credentials=step.effects.needs_credentials,
-                    drives_input=step.effects.drives_input,
-                    reversible=step.effects.reversible,
-                ),
-            )
-            for step in outcome.plan.steps
-        ],
+        steps=[step_read(step, identities[step.position]) for step in outcome.plan.steps],
         steps_total=len(outcome.plan.steps),
         gated_count=outcome.plan.gated_count,
         model_id=outcome.model_id,
