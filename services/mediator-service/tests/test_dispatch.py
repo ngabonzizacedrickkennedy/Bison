@@ -10,6 +10,7 @@ from mediator_service.dispatch import (
     ABORTED,
     FAILED,
     SUCCEEDED,
+    FileWrite,
     Output,
     Result,
     RouterClient,
@@ -39,6 +40,7 @@ REQUEST_ID = "r-1"
 SCOPE_ROOT = "C:\\scope"
 
 DIGEST = "a" * 64
+OTHER_DIGEST = "b" * 64
 
 
 def effects_body(**overrides: Any) -> dict[str, Any]:
@@ -119,9 +121,12 @@ def result_body(**overrides: Any) -> dict[str, Any]:
         "exit_code": 0,
         "terminated_by": None,
         "error_message": None,
-        "files_written": [{"path": "C:\\scope\\out.txt", "sha256": DIGEST, "size_bytes": 12}],
+        "files_written": [
+            {"path": "C:\\scope\\out.txt", "sha256": DIGEST, "size_bytes": 12},
+            {"path": "C:\\scope\\log.txt", "sha256": OTHER_DIGEST, "size_bytes": 40},
+        ],
         "files_deleted": ["C:\\scope\\stale.txt"],
-        "files_written_total": 1,
+        "files_written_total": 2,
         "files_deleted_total": 1,
         "files_truncated": False,
         "ports_opened": [8000],
@@ -318,9 +323,22 @@ def test_an_error_message_is_a_failure() -> None:
 def test_a_result_carries_every_path_the_step_touched() -> None:
     result = to_result(result_body())
 
-    assert result.touched_paths == ("C:\\scope\\out.txt", "C:\\scope\\stale.txt")
+    assert result.touched_paths == (
+        "C:\\scope\\out.txt",
+        "C:\\scope\\log.txt",
+        "C:\\scope\\stale.txt",
+    )
     assert result.ports_opened == (8000,)
     assert result.ok
+
+
+def test_a_result_keeps_the_digest_and_size_of_every_file_written() -> None:
+    result = to_result(result_body())
+
+    assert result.files_written == (
+        FileWrite(path="C:\\scope\\out.txt", sha256=DIGEST, size_bytes=12),
+        FileWrite(path="C:\\scope\\log.txt", sha256=OTHER_DIGEST, size_bytes=40),
+    )
 
 
 def test_a_terminated_result_reads_as_aborted() -> None:
@@ -338,6 +356,14 @@ def test_a_write_result_succeeds_when_no_error_is_reported() -> None:
     assert result.touched_paths == ("C:\\scope\\schema.sql",)
 
 
+def test_a_write_result_keeps_the_digest_of_what_it_wrote() -> None:
+    result = to_write_result(write_result_body())
+
+    assert result.files_written == (
+        FileWrite(path="C:\\scope\\schema.sql", sha256=DIGEST, size_bytes=15),
+    )
+
+
 def test_a_write_result_fails_when_an_error_is_reported() -> None:
     result = to_write_result(write_result_body(error_message="the path is outside scope"))
 
@@ -345,11 +371,18 @@ def test_a_write_result_fails_when_an_error_is_reported() -> None:
     assert result.error_message == "the path is outside scope"
 
 
+def test_a_file_entry_with_no_path_is_dropped_rather_than_read_as_empty() -> None:
+    result = to_result(result_body(files_written=[{"sha256": DIGEST, "size_bytes": 12}]))
+
+    assert result.files_written == ()
+
+
 def test_an_error_event_becomes_a_failed_result_carrying_the_detail() -> None:
     result = to_failure({"event": "error", "step_id": STEP_ID, "detail": "the venv is missing"})
 
     assert result.state == FAILED
     assert result.error_message == "the venv is missing"
+    assert result.files_written == ()
 
 
 def test_an_error_event_with_no_detail_still_says_something() -> None:

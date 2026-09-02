@@ -87,17 +87,6 @@ def numbers(payload: dict[str, Any], key: str) -> tuple[int, ...]:
     return tuple(item for item in value if isinstance(item, int) and not isinstance(item, bool))
 
 
-def written_paths(payload: dict[str, Any]) -> tuple[str, ...]:
-    value = payload.get("files_written")
-    entries = value if isinstance(value, list) else []
-
-    return tuple(
-        entry["path"]
-        for entry in entries
-        if isinstance(entry, dict) and isinstance(entry.get("path"), str) and entry["path"]
-    )
-
-
 def reason(response: httpx.Response) -> str:
     try:
         payload: Any = response.json()
@@ -120,6 +109,32 @@ def content_of(action: dict[str, Any]) -> str:
         raise resolve.UnrunnableActionError("a write_file action needs a content string")
 
     return value
+
+
+@dataclass(frozen=True)
+class FileWrite:
+    path: str
+    sha256: str
+    size_bytes: int
+
+
+def to_file_write(payload: dict[str, Any]) -> FileWrite:
+    return FileWrite(
+        path=text(payload, "path"),
+        sha256=text(payload, "sha256"),
+        size_bytes=whole(payload, "size_bytes"),
+    )
+
+
+def file_writes(payload: dict[str, Any]) -> tuple[FileWrite, ...]:
+    value = payload.get("files_written")
+    entries = value if isinstance(value, list) else []
+
+    return tuple(
+        to_file_write(entry)
+        for entry in entries
+        if isinstance(entry, dict) and isinstance(entry.get("path"), str) and entry["path"]
+    )
 
 
 @dataclass(frozen=True)
@@ -190,7 +205,8 @@ class Result:
     exit_code: int | None
     terminated_by: str | None
     error_message: str | None
-    touched_paths: tuple[str, ...]
+    files_written: tuple[FileWrite, ...]
+    files_deleted: tuple[str, ...]
     ports_opened: tuple[int, ...]
     started_at: str | None
     ended_at: str | None
@@ -198,6 +214,10 @@ class Result:
     @property
     def ok(self) -> bool:
         return self.state == SUCCEEDED
+
+    @property
+    def touched_paths(self) -> tuple[str, ...]:
+        return tuple(write.path for write in self.files_written) + self.files_deleted
 
 
 Event = Output | Result
@@ -274,7 +294,8 @@ def to_result(payload: dict[str, Any]) -> Result:
         exit_code=exit_code,
         terminated_by=terminated_by,
         error_message=error_message,
-        touched_paths=written_paths(payload) + strings(payload, "files_deleted"),
+        files_written=file_writes(payload),
+        files_deleted=strings(payload, "files_deleted"),
         ports_opened=numbers(payload, "ports_opened"),
         started_at=optional_text(payload, "started_at"),
         ended_at=optional_text(payload, "ended_at"),
@@ -290,7 +311,8 @@ def to_write_result(payload: dict[str, Any]) -> Result:
         exit_code=None,
         terminated_by=None,
         error_message=error_message,
-        touched_paths=written_paths(payload),
+        files_written=file_writes(payload),
+        files_deleted=(),
         ports_opened=(),
         started_at=optional_text(payload, "started_at"),
         ended_at=optional_text(payload, "ended_at"),
@@ -306,7 +328,8 @@ def to_failure(payload: dict[str, Any]) -> Result:
         exit_code=None,
         terminated_by=None,
         error_message=detail if detail else "the runner reported an error with no detail",
-        touched_paths=(),
+        files_written=(),
+        files_deleted=(),
         ports_opened=(),
         started_at=None,
         ended_at=None,
