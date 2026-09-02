@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -12,6 +13,10 @@ from task_runner_service.writes import (
     TEMPORARY_SUFFIX,
     WriteRefusedError,
     perform,
+)
+
+pytestmark = pytest.mark.skipif(
+    sys.platform != "win32", reason="scoped writes use Windows path semantics"
 )
 
 SOURCE = "import os\n\n\nprint(len(os.listdir('.')))\n"
