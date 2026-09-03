@@ -42,6 +42,23 @@ def plan_ready(task_id: str, plan_id: str, steps_total: int, gated_total: int) -
     }
 
 
+def task_replanning(
+    task_id: str,
+    plan_id: str,
+    attempt: int,
+    attempts_allowed: int,
+    reason: str,
+) -> dict[str, Any]:
+    return {
+        "event": "task_replanning",
+        "task_id": task_id,
+        "superseded_plan_id": plan_id,
+        "attempt": attempt,
+        "attempts_allowed": attempts_allowed,
+        "reason": reason,
+    }
+
+
 def step_awaiting_confirmation(
     task_id: str, step_id: str, position: int, description: str, reason: str | None
 ) -> dict[str, Any]:

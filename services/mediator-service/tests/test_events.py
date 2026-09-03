@@ -21,6 +21,7 @@ from mediator_service.events import (
     step_output,
     step_started,
     task_finished,
+    task_replanning,
     task_started,
 )
 
@@ -46,6 +47,7 @@ def every_event() -> list[dict[str, Any]]:
         step_started("t-1", "s-1", 0, "Install"),
         step_output("t-1", "s-1", "stdout", 0, "working"),
         step_finished("t-1", "s-1", "succeeded", 0, None, None),
+        task_replanning("t-1", "p-1", 1, 2, "the step exited with code 1"),
         criterion_settled("t-1", "c-1", "File exists", "verified", "found"),
         task_finished("t-1", "done", None, 100.0, 50.0),
         halted("kill_switch", "t-1", "r-1"),
@@ -85,6 +87,10 @@ def test_a_mid_run_event_is_not_terminal() -> None:
     assert not is_terminal(task_started("t-1", "Set up", 0, 1))
     assert not is_terminal(step_output("t-1", "s-1", "stdout", 0, "hi"))
     assert not is_terminal(task_finished("t-1", "done", None, 100.0, 50.0))
+
+
+def test_a_replan_does_not_end_the_run() -> None:
+    assert not is_terminal(task_replanning("t-1", "p-1", 1, 2, "the step failed"))
 
 
 def test_a_task_finishing_is_not_the_run_finishing() -> None:
@@ -253,12 +259,24 @@ def test_a_plan_reports_how_many_of_its_steps_are_gated() -> None:
     assert event["gated_total"] == 2
 
 
-def test_a_settled_criterion_carries_the_statement_a_reader_would_need() -> None:
-    event = criterion_settled("t-1", "c-1", "Port 8000 answers", "failed", "no listener observed")
+def test_a_replan_names_the_plan_it_abandons_not_the_one_it_will_build() -> None:
+    event = task_replanning("t-1", "p-1", 1, 2, "the step exited with code 1")
 
-    assert event["statement"] == "Port 8000 answers"
-    assert event["status"] == "failed"
-    assert event["detail"] == "no listener observed"
+    assert event["superseded_plan_id"] == "p-1"
+    assert "plan_id" not in event
+
+
+def test_a_replan_reports_the_attempt_against_its_bound() -> None:
+    event = task_replanning("t-1", "p-1", 2, 2, "the step exited with code 1")
+
+    assert event["attempt"] == 2
+    assert event["attempts_allowed"] == 2
+
+
+def test_a_replan_carries_the_failure_that_caused_it() -> None:
+    event = task_replanning("t-1", "p-3", 1, 2, "no python interpreter on PATH")
+
+    assert event["reason"] == "no python interpreter on PATH"
 
 
 def test_a_finished_run_accounts_for_every_task() -> None:

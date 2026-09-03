@@ -27,6 +27,7 @@ from mediator_service.execution import (
     COMPLETED,
     FAILED,
     HALTED,
+    MAX_REPLAN_ATTEMPTS,
     NO_RESULT,
     Clients,
     TaskPass,
@@ -135,10 +136,10 @@ def step_body(
     }
 
 
-def plan_of(*steps: dict[str, Any]) -> Plan:
+def plan_of(*steps: dict[str, Any], plan_id: str = "pl-1") -> Plan:
     return to_plan(
         {
-            "plan_id": "pl-1",
+            "plan_id": plan_id,
             "project_id": PROJECT_ID,
             "task_id": TASK_ID,
             "request_id": REQUEST_ID,
@@ -170,14 +171,19 @@ def succeeded(step_id: str = "s-1", files: tuple[FileWrite, ...] = ()) -> Result
     )
 
 
-def failed(step_id: str = "s-1", exit_code: int = 1, message: str | None = None) -> Result:
+def failed(
+    step_id: str = "s-1",
+    exit_code: int = 1,
+    message: str | None = None,
+    files: tuple[FileWrite, ...] = (),
+) -> Result:
     return Result(
         step_id=step_id,
         state="failed",
         exit_code=exit_code,
         terminated_by=None,
         error_message=message,
-        files_written=(),
+        files_written=files,
         files_deleted=(),
         ports_opened=(),
         started_at="2026-01-01T00:00:00+00:00",
@@ -205,9 +211,9 @@ class Halt:
 
 
 class FakeRouter(RouterClient):
-    def __init__(self, plan: Plan | None = None, failure: Exception | None = None) -> None:
+    def __init__(self, plans: tuple[Plan, ...] = (), failure: Exception | None = None) -> None:
         super().__init__("http://router.test", 5.0, 1.0, transport=transport())
-        self._plan = plan
+        self._plans = plans
         self._failure = failure
         self.calls: list[tuple[str, str, str]] = []
 
@@ -217,9 +223,9 @@ class FakeRouter(RouterClient):
         if self._failure is not None:
             raise self._failure
 
-        assert self._plan is not None
+        assert self._plans
 
-        return self._plan
+        return self._plans[min(len(self.calls) - 1, len(self._plans) - 1)]
 
 
 class FakeRunner(RunnerClient):
@@ -328,6 +334,7 @@ class Ran:
 async def run_pass(
     *,
     steps: tuple[dict[str, Any], ...] = (),
+    later_steps: tuple[tuple[dict[str, Any], ...], ...] = (),
     scripts: dict[str, list[Event]] | None = None,
     task_state: str = "ready",
     criteria: tuple[Criterion, ...] = (),
@@ -336,8 +343,13 @@ async def run_pass(
     runner_failure: Exception | None = None,
     project_failures: dict[str, Exception] | None = None,
     halt_after: int | None = None,
+    replan_limit: int = MAX_REPLAN_ATTEMPTS,
 ) -> Ran:
-    router = FakeRouter(plan_of(*steps), router_failure)
+    plans = tuple(
+        plan_of(*entry, plan_id=f"pl-{index + 1}")
+        for index, entry in enumerate((steps, *later_steps))
+    )
+    router = FakeRouter(plans, router_failure)
     runner = FakeRunner(scripts, runner_failure)
     project = FakeProject(criteria, progress, project_failures)
 
@@ -350,6 +362,7 @@ async def run_pass(
         0,
         1,
         Halt(halt_after),
+        replan_limit,
     )
 
     ran = Ran(walker, router, runner, project)
@@ -663,3 +676,125 @@ async def test_a_step_is_settled_in_the_state_the_runner_reported(state: str) ->
     ran = await run_pass(steps=(step_body(),), scripts={"s-1": [result]})
 
     assert ran.step_states()[-1] == ("s-1", state)
+
+
+async def a_replanned_run() -> Ran:
+    return await run_pass(
+        steps=(step_body(on_failure="replan"),),
+        later_steps=((step_body("s-9"),),),
+        scripts={"s-1": [failed("s-1")], "s-9": [succeeded("s-9")]},
+    )
+
+
+async def test_a_failure_marked_replan_asks_the_router_for_a_new_plan() -> None:
+    ran = await a_replanned_run()
+
+    assert ran.router.calls == [
+        (PROJECT_ID, TASK_ID, REQUEST_ID),
+        (PROJECT_ID, TASK_ID, REQUEST_ID),
+    ]
+
+
+async def test_a_replanned_task_runs_the_new_plan_and_can_still_finish() -> None:
+    ran = await a_replanned_run()
+
+    assert [entry[0] for entry in ran.runner.dispatched] == ["s-1", "s-9"]
+    assert ran.run.state == COMPLETED
+    assert ran.run.replans == 1
+
+
+async def test_a_replan_is_announced_between_the_two_plans() -> None:
+    ran = await a_replanned_run()
+    names = ran.names()
+    first = names.index("plan_ready")
+    second = names.index("plan_ready", first + 1)
+
+    assert names.count("plan_ready") == 2
+    assert first < names.index("task_replanning") < second
+
+
+async def test_a_replan_names_what_it_abandoned_and_why() -> None:
+    ran = await a_replanned_run()
+    announced = ran.one("task_replanning")
+
+    assert announced["superseded_plan_id"] == "pl-1"
+    assert announced["reason"] == "the step exited with code 1"
+    assert announced["attempt"] == 1
+    assert announced["attempts_allowed"] == MAX_REPLAN_ATTEMPTS
+
+
+async def test_a_replan_does_not_start_the_task_a_second_time() -> None:
+    ran = await a_replanned_run()
+
+    assert ran.task_states().count("in_progress") == 1
+
+
+async def test_an_aborting_failure_never_asks_for_a_second_plan() -> None:
+    ran = await run_pass(steps=(step_body(),), scripts={"s-1": [failed()]})
+
+    assert len(ran.router.calls) == 1
+    assert "task_replanning" not in ran.names()
+
+
+async def test_replanning_stops_at_the_limit_and_names_it() -> None:
+    ran = await run_pass(
+        steps=(step_body(on_failure="replan"),),
+        scripts={"s-1": [failed("s-1")]},
+        replan_limit=1,
+    )
+
+    assert len(ran.router.calls) == 2
+    assert len(ran.only("task_replanning")) == 1
+    assert ran.run.state == FAILED
+    assert "re-planning limit of 1 reached" in str(ran.run.reason)
+
+
+async def test_a_replan_limit_of_zero_behaves_like_abort() -> None:
+    ran = await run_pass(
+        steps=(step_body(on_failure="replan"),),
+        scripts={"s-1": [failed("s-1")]},
+        replan_limit=0,
+    )
+
+    assert len(ran.router.calls) == 1
+    assert "task_replanning" not in ran.names()
+    assert ran.run.state == FAILED
+
+
+async def test_evidence_from_an_abandoned_plan_still_settles_criteria() -> None:
+    ran = await run_pass(
+        steps=(step_body(on_failure="replan"),),
+        later_steps=((step_body("s-9"),),),
+        scripts={
+            "s-1": [failed("s-1", files=(FileWrite("C:\\scope\\schema.sql", DIGEST, 12),))],
+            "s-9": [succeeded("s-9")],
+        },
+        criteria=(criterion(),),
+    )
+
+    assert ran.project.settled[0][:2] == ("c-1", "verified")
+    assert len(ran.only("criterion_settled")) == 1
+
+
+async def test_a_halt_after_a_failure_stops_before_the_router_is_asked_again() -> None:
+    ran = await run_pass(
+        steps=(step_body(on_failure="replan"),),
+        scripts={"s-1": [failed("s-1")]},
+        halt_after=1,
+    )
+
+    assert len(ran.router.calls) == 1
+    assert "task_replanning" not in ran.names()
+    assert ran.run.state == HALTED
+
+
+async def test_a_step_routed_elsewhere_can_be_replanned() -> None:
+    ran = await run_pass(
+        steps=(step_body(service="automation", on_failure="replan"),),
+        later_steps=((step_body("s-9"),),),
+        scripts={"s-9": [succeeded("s-9")]},
+    )
+
+    assert len(ran.router.calls) == 2
+    assert [entry[0] for entry in ran.runner.dispatched] == ["s-9"]
+    assert ran.run.state == COMPLETED

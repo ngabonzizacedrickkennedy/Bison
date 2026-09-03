@@ -38,11 +38,18 @@ STEP_RUNNING: Final[str] = "running"
 STEP_AWAITING: Final[str] = "awaiting_confirmation"
 
 CONTINUE: Final[str] = "continue"
+REPLAN: Final[str] = "replan"
 
 COMPLETED: Final[str] = "completed"
 FAILED: Final[str] = "failed"
 AWAITING: Final[str] = "awaiting_confirmation"
 HALTED: Final[str] = "halted"
+
+WALK_ENDED: Final[str] = "ended"
+WALK_STOPPED: Final[str] = "stopped"
+WALK_REPLANNING: Final[str] = "replanning"
+
+MAX_REPLAN_ATTEMPTS: Final[int] = 2
 
 NOT_RUN: Final[str] = "the task pass did not complete"
 NO_RESULT: Final[str] = "the runner closed the stream without reporting a result"
@@ -83,6 +90,10 @@ def undispatchable(step: Step) -> str:
     return f"step {step.step_id} carries no action the runner can execute"
 
 
+def exhausted(failure: str, limit: int) -> str:
+    return f"{failure} (re-planning limit of {limit} reached)"
+
+
 def step_reason(result: Result) -> str | None:
     if result.state == SUCCEEDED:
         return None
@@ -119,6 +130,7 @@ class TaskPass:
         position: int,
         tasks_total: int,
         halted: Callable[[], bool],
+        replan_limit: int = MAX_REPLAN_ATTEMPTS,
     ) -> None:
         self._clients = clients
         self._emitter = emitter
@@ -128,8 +140,12 @@ class TaskPass:
         self._position = position
         self._tasks_total = tasks_total
         self._halted = halted
+        self._replan_limit = replan_limit
         self._results: list[Result] = []
         self._outcomes: list[Outcome] = []
+        self._exit = WALK_ENDED
+        self._failure: str | None = None
+        self.replans = 0
         self.state = FAILED
         self.reason: str | None = NOT_RUN
         self.awaiting_step_id: str | None = None
@@ -171,18 +187,58 @@ class TaskPass:
     async def _walk(self) -> AsyncIterator[bytes]:
         await self._begin()
 
-        plan = await self._clients.router.plan(self._project_id, self._task.id, self._request_id)
+        plan = await self._plan()
 
-        yield self._emitter.emit(
-            events.plan_ready(self._task.id, plan.plan_id, plan.steps_total, plan.gated_count)
-        )
+        yield self._announce(plan)
 
+        while True:
+            async for chunk in self._steps(plan):
+                yield chunk
+
+            if self._exit == WALK_STOPPED:
+                return
+
+            if self._exit != WALK_REPLANNING:
+                break
+
+            if self._halted():
+                self.state = HALTED
+                self.reason = HALT_REASON
+
+                return
+
+            self.replans += 1
+
+            yield self._emitter.emit(
+                events.task_replanning(
+                    self._task.id,
+                    plan.plan_id,
+                    self.replans,
+                    self._replan_limit,
+                    self._failure or NOT_RUN,
+                )
+            )
+
+            plan = await self._plan()
+
+            yield self._announce(plan)
+
+        async for chunk in self._criteria(plan):
+            yield chunk
+
+        self.state = FAILED if self._failure is not None else COMPLETED
+        self.reason = self._failure
+
+    async def _steps(self, plan: Plan) -> AsyncIterator[bytes]:
+        self._exit = WALK_ENDED
+        self._failure = None
         failure: str | None = None
 
         for step in ordered(plan.steps):
             if self._halted():
                 self.state = HALTED
                 self.reason = HALT_REASON
+                self._exit = WALK_STOPPED
 
                 return
 
@@ -190,15 +246,19 @@ class TaskPass:
                 async for chunk in self._gate(step):
                     yield chunk
 
+                self._exit = WALK_STOPPED
+
                 return
 
             if not step.dispatchable:
                 failure = undispatchable(step)
 
-                if step.on_failure != CONTINUE:
-                    break
+                if step.on_failure == CONTINUE:
+                    continue
 
-                continue
+                self._decide(failure, step)
+
+                return
 
             before = len(self._results)
 
@@ -207,14 +267,36 @@ class TaskPass:
 
             failure = self._verdict(before)
 
-            if failure is not None and step.on_failure != CONTINUE:
-                break
+            if failure is None or step.on_failure == CONTINUE:
+                continue
 
-        async for chunk in self._criteria(plan):
-            yield chunk
+            self._decide(failure, step)
 
-        self.state = FAILED if failure is not None else COMPLETED
-        self.reason = failure
+            return
+
+        self._failure = failure
+
+    def _decide(self, failure: str, step: Step) -> None:
+        if step.on_failure != REPLAN:
+            self._failure = failure
+
+            return
+
+        if self.replans >= self._replan_limit:
+            self._failure = exhausted(failure, self._replan_limit)
+
+            return
+
+        self._failure = failure
+        self._exit = WALK_REPLANNING
+
+    async def _plan(self) -> Plan:
+        return await self._clients.router.plan(self._project_id, self._task.id, self._request_id)
+
+    def _announce(self, plan: Plan) -> bytes:
+        return self._emitter.emit(
+            events.plan_ready(self._task.id, plan.plan_id, plan.steps_total, plan.gated_count)
+        )
 
     def _verdict(self, before: int) -> str | None:
         if len(self._results) == before:
