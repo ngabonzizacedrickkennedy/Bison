@@ -27,9 +27,12 @@ class Settings(BaseSettings):
     port: int = 8700
     project_service_url: str = "http://127.0.0.1:8400"
     model_broker_url: str = "http://127.0.0.1:8300"
+    router_service_url: str = "http://127.0.0.1:8600"
+    task_runner_url: str = "http://127.0.0.1:8800"
     connect_timeout_seconds: float = 5.0
     invoke_timeout_seconds: float = 900.0
     upstream_timeout_seconds: float = 30.0
+    run_timeout_seconds: float = 1800.0
     engine_prompt_name: str = "engine"
     engine_prompt_version: str = "v1"
     mediator_prompt_name: str = "mediator"

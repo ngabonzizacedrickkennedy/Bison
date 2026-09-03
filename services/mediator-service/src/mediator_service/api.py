@@ -15,7 +15,7 @@ from bison_contracts.halt import (
     HaltStatus,
 )
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from mediator_service import SERVICE_NAME, decomposition
@@ -23,6 +23,9 @@ from mediator_service.broker import BrokerClient, BrokerError, BrokerUnreachable
 from mediator_service.config import settings
 from mediator_service.context import BriefFacts, MediatorContext
 from mediator_service.discipline import TreeRejectedError
+from mediator_service.dispatch import RouterClient, RunnerClient
+from mediator_service.execution import Clients
+from mediator_service.loop import RunLoop
 from mediator_service.manifest import (
     ManifestUnavailableError,
     load_manifest,
@@ -37,9 +40,11 @@ from mediator_service.persist import (
 )
 from mediator_service.sequencing import SequencingError
 from mediator_service.tree import MediatorParseError
+from mediator_service.upstream import ProjectClient as UpstreamProjectClient
 
 BOUNDARY: Boundary = "between_tasks"
 WORKSPACE_DIRNAME = "workspace"
+NDJSON = "application/x-ndjson"
 
 
 class BriefUnavailableError(RuntimeError):
@@ -63,6 +68,8 @@ class Health(BaseModel):
     data_dir: str
     project_service: str
     model_broker: str
+    router_service: str
+    task_runner: str
 
 
 class TaskRead(BaseModel):
@@ -213,6 +220,8 @@ async def health() -> Health:
         data_dir=str(resolved.data_dir),
         project_service=resolved.project_service_url,
         model_broker=resolved.model_broker_url,
+        router_service=resolved.router_service_url,
+        task_runner=resolved.task_runner_url,
     )
 
 
@@ -282,6 +291,36 @@ async def read_brief(client: httpx.AsyncClient, project_id: str) -> BriefFacts:
     return facts
 
 
+def clients_for_run() -> Clients:
+    resolved = settings()
+
+    return Clients(
+        router=RouterClient(
+            resolved.router_service_url,
+            resolved.invoke_timeout_seconds,
+            resolved.connect_timeout_seconds,
+        ),
+        runner=RunnerClient(
+            resolved.task_runner_url,
+            resolved.run_timeout_seconds,
+            resolved.connect_timeout_seconds,
+        ),
+        project=UpstreamProjectClient(
+            resolved.project_service_url, resolved.upstream_timeout_seconds
+        ),
+    )
+
+
+async def drain(loop: RunLoop, clients: Clients) -> AsyncIterator[bytes]:
+    try:
+        async for chunk in loop.stream():
+            yield chunk
+    finally:
+        await clients.router.close()
+        await clients.runner.close()
+        await clients.project.close()
+
+
 @app.post("/projects/{project_id}/tree")
 async def build_tree(project_id: str, request_id: str | None = None) -> DecompositionRead:
     halt_state.guard()
@@ -339,3 +378,13 @@ async def build_tree(project_id: str, request_id: str | None = None) -> Decompos
             for task in outcome.draft.tasks
         ],
     )
+
+
+@app.post("/projects/{project_id}/run")
+async def run_project(project_id: str, request_id: str | None = None) -> StreamingResponse:
+    halt_state.guard()
+
+    clients = clients_for_run()
+    loop = RunLoop(clients, halt_state, project_id, request_id or str(uuid4()))
+
+    return StreamingResponse(drain(loop, clients), media_type=NDJSON)
