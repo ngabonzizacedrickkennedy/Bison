@@ -14,6 +14,7 @@ from mediator_service.execution import (
     HALTED,
     UPSTREAM_FAILURES,
     Clients,
+    Resumption,
     TaskPass,
 )
 from mediator_service.sequencing import Node, Ordering, SequencingError
@@ -45,11 +46,13 @@ class RunLoop:
         halt: HaltState,
         project_id: str,
         request_id: str,
+        resumption: Resumption | None = None,
     ) -> None:
         self._clients = clients
         self._halt = halt
         self._project_id = project_id
         self._request_id = request_id
+        self._resumption = resumption
         self._emitter = Emitter(request_id, project_id)
         self.tasks_completed = 0
         self.tasks_failed = 0
@@ -102,7 +105,7 @@ class RunLoop:
 
                 return
 
-            task_id = self._next(ordering, succeeded, attempted)
+            task_id = self._next(ordering, succeeded, attempted, index)
 
             if task_id is None:
                 break
@@ -116,6 +119,7 @@ class RunLoop:
                 ordering.order.index(task_id),
                 self.tasks_total,
                 lambda: self._halt.halted,
+                resumption=self._take(task_id),
             )
 
             async for chunk in walker.stream():
@@ -155,13 +159,37 @@ class RunLoop:
         )
 
     def _next(
-        self, ordering: Ordering, succeeded: frozenset[str], attempted: set[str]
+        self,
+        ordering: Ordering,
+        succeeded: frozenset[str],
+        attempted: set[str],
+        index: dict[str, Task],
     ) -> str | None:
+        resuming = self._resumption
+
+        if resuming is not None:
+            parked = resuming.plan.task_id
+
+            if parked in index and parked not in attempted:
+                return parked
+
+            self._resumption = None
+
         for task_id in ordering.ready(succeeded):
             if task_id not in attempted:
                 return task_id
 
         return None
+
+    def _take(self, task_id: str) -> Resumption | None:
+        pending = self._resumption
+
+        if pending is None or pending.plan.task_id != task_id:
+            return None
+
+        self._resumption = None
+
+        return pending
 
     async def _stop(
         self, task_id: str | None, outcomes: tuple[Outcome, ...]

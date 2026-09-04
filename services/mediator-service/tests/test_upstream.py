@@ -339,3 +339,110 @@ async def test_an_unreachable_service_is_distinguished_from_a_refusal() -> None:
         await client.tasks("p-1")
 
     await client.close()
+
+
+def stored_step_body(**overrides: Any) -> dict[str, Any]:
+    base: dict[str, Any] = {
+        "id": "s-1",
+        "plan_id": "pl-1",
+        "position": 0,
+        "description": "apply the schema",
+        "service": "task-runner",
+        "action": {"type": "run_python_script", "script_path": "apply.py", "arguments": []},
+        "requires_confirmation": True,
+        "confirmation_reason": "it writes to the database",
+        "on_failure": "abort",
+        "reversible": False,
+        "criterion_refs": ["c-1"],
+        "effects": {"writes_paths": ["schema.sql"], "deletes_paths": [], "network": False},
+        "state": "awaiting_confirmation",
+    }
+    base.update(overrides)
+
+    return base
+
+
+def stored_plan_body(*steps: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": "pl-1",
+        "project_id": "p-1",
+        "task_id": "t-1",
+        "request_id": "r-1",
+        "scope_root": "C:\\scope",
+        "intent": "create the schema",
+        "rationale": "the task asks for it",
+        "steps": list(steps),
+        "gated_count": 1,
+        "steps_total": len(steps),
+        "model_id": "qwen2.5-coder:7b",
+        "prompt_name": "router",
+        "prompt_version": "v4",
+        "prompt_hash": "d9223d1149c4",
+    }
+
+
+async def test_a_stored_step_is_read_from_its_own_route() -> None:
+    recorder = Recorder([ok(stored_step_body())])
+
+    await client_for(recorder).stored_step("s-1")
+
+    assert recorder.last.method == "GET"
+    assert recorder.last.url.path == "/steps/s-1"
+
+
+async def test_reading_a_stored_step_sends_no_body() -> None:
+    recorder = Recorder([ok(stored_step_body())])
+
+    await client_for(recorder).stored_step("s-1")
+
+    assert recorder.last.content == b""
+
+
+async def test_a_stored_step_is_handed_back_exactly_as_stored() -> None:
+    body = stored_step_body()
+    recorder = Recorder([ok(body)])
+
+    assert await client_for(recorder).stored_step("s-1") == body
+
+
+async def test_a_stored_plan_is_read_from_its_own_route() -> None:
+    recorder = Recorder([ok(stored_plan_body())])
+
+    await client_for(recorder).stored_plan("pl-1")
+
+    assert recorder.last.method == "GET"
+    assert recorder.last.url.path == "/plans/pl-1"
+
+
+async def test_a_stored_plan_is_handed_back_with_its_steps_untouched() -> None:
+    body = stored_plan_body(stored_step_body(), stored_step_body(id="s-2", position=1))
+    recorder = Recorder([ok(body)])
+
+    assert await client_for(recorder).stored_plan("pl-1") == body
+
+
+async def test_a_missing_step_is_refused_with_the_route_that_failed() -> None:
+    recorder = Recorder([httpx.Response(404, json={"detail": "no such step"})])
+
+    with pytest.raises(ProjectServiceError) as raised:
+        await client_for(recorder).stored_step("s-9")
+
+    assert raised.value.status == 404
+    assert "/steps/s-9" in raised.value.detail
+
+
+async def test_a_missing_plan_is_refused_with_the_route_that_failed() -> None:
+    recorder = Recorder([httpx.Response(404, json={"detail": "no such plan"})])
+
+    with pytest.raises(ProjectServiceError) as raised:
+        await client_for(recorder).stored_plan("pl-9")
+
+    assert raised.value.status == 404
+    assert "/plans/pl-9" in raised.value.detail
+
+
+async def test_a_plan_that_comes_back_as_a_list_is_refused() -> None:
+    recorder = Recorder([ok([stored_plan_body()])])
+
+    with pytest.raises(ProjectServiceError):
+        await client_for(recorder).stored_plan("pl-1")

@@ -17,7 +17,7 @@ from mediator_service.dispatch import (
     Step,
     to_plan,
 )
-from mediator_service.execution import Clients
+from mediator_service.execution import Clients, Resumption
 from mediator_service.loop import NO_TASKS, RunLoop
 from mediator_service.persist import ProjectServiceUnreachableError
 from mediator_service.upstream import Criterion, Outcome, Progress, ProjectClient, Snapshot, Task
@@ -176,11 +176,13 @@ class FakeRunner(RunnerClient):
         super().__init__("http://runner.test", 5.0, 1.0, transport=transport())
         self._scripts = scripts
         self.dispatched: list[str] = []
+        self.confirmed: list[bool] = []
 
     async def dispatch(
         self, step: Step, scope_root: str, task_id: str, confirmed: bool
     ) -> AsyncIterator[Event]:
         self.dispatched.append(step.step_id)
+        self.confirmed.append(confirmed)
 
         for event in self._scripts.get(step.step_id, [succeeded(step.step_id)]):
             yield event
@@ -272,6 +274,7 @@ async def run_loop(
     halt: Switch | None = None,
     halt_on: tuple[str, str] | None = None,
     failure: Exception | None = None,
+    resumption: Resumption | None = None,
 ) -> Ran:
     switch = halt or Switch()
 
@@ -283,7 +286,7 @@ async def run_loop(
     runner = FakeRunner(scripts or {})
     project = FakeProject(tasks, failure, watch if halt_on else None)
 
-    loop = RunLoop(Clients(router, runner, project), switch, PROJECT_ID, REQUEST_ID)
+    loop = RunLoop(Clients(router, runner, project), switch, PROJECT_ID, REQUEST_ID, resumption)
     ran = Ran(loop, router, runner, project)
 
     async for chunk in loop.stream():
@@ -477,3 +480,84 @@ async def test_each_task_is_told_its_position_in_the_run() -> None:
     positions = [(entry["task_id"], entry["position"]) for entry in ran.only("task_started")]
 
     assert positions == [("t-1", 0), ("t-2", 1)]
+
+
+async def test_a_confirmed_task_runs_before_anything_else() -> None:
+    ran = await run_loop(
+        (task("t-1", 0), task("t-2", 1, state="awaiting_confirmation")),
+        resumption=Resumption(plan_for("t-2", step_body("s-9")), "s-9"),
+    )
+
+    assert ran.started() == ["t-2", "t-1"]
+
+
+async def test_the_confirmed_task_is_not_planned_again() -> None:
+    ran = await run_loop(
+        (task("t-1", 0), task("t-2", 1, state="awaiting_confirmation")),
+        resumption=Resumption(plan_for("t-2", step_body("s-9")), "s-9"),
+    )
+
+    assert ran.router.asked == ["t-1"]
+    assert "s-9" in ran.runner.dispatched
+
+
+async def test_the_confirmed_step_reaches_the_runner_as_confirmed() -> None:
+    ran = await run_loop(
+        (task("t-1", 0, state="awaiting_confirmation"),),
+        resumption=Resumption(plan_for("t-1", gated_body("s-9")), "s-9"),
+    )
+
+    assert ran.runner.dispatched == ["s-9"]
+    assert ran.runner.confirmed == [True]
+
+
+async def test_a_run_with_no_confirmation_plans_every_task_from_the_router() -> None:
+    ran = await run_loop((task("t-1", 0), task("t-2", 1)))
+
+    assert ran.router.asked == ["t-1", "t-2"]
+
+
+async def test_a_confirmation_for_a_task_outside_this_project_is_ignored() -> None:
+    ran = await run_loop(
+        (task("t-1", 0),),
+        resumption=Resumption(plan_for("t-9", step_body("s-9")), "s-9"),
+    )
+
+    assert ran.started() == ["t-1"]
+    assert ran.router.asked == ["t-1"]
+    assert "s-9" not in ran.runner.dispatched
+
+
+async def test_a_confirmation_for_a_task_that_has_already_settled_is_ignored() -> None:
+    ran = await run_loop(
+        (task("t-1", 0), task("t-2", 1, state="done")),
+        resumption=Resumption(plan_for("t-2", step_body("s-9")), "s-9"),
+    )
+
+    assert ran.started() == ["t-1"]
+    assert "s-9" not in ran.runner.dispatched
+
+
+async def test_a_resumed_run_carries_on_through_the_rest_of_the_tree() -> None:
+    ran = await run_loop(
+        (task("t-1", 0, state="awaiting_confirmation"), task("t-2", 1, depends_on=("t-1",))),
+        resumption=Resumption(plan_for("t-1", step_body("s-9")), "s-9"),
+    )
+    finished = ran.one("run_finished")
+
+    assert ran.started() == ["t-1", "t-2"]
+    assert (finished["tasks_completed"], finished["tasks_failed"]) == (2, 0)
+
+
+async def test_a_halt_stops_a_resumed_run_before_the_stored_plan_is_used() -> None:
+    switch = Switch()
+    switch.trip()
+
+    ran = await run_loop(
+        (task("t-1", 0, state="awaiting_confirmation"),),
+        halt=switch,
+        resumption=Resumption(plan_for("t-1", step_body("s-9")), "s-9"),
+    )
+
+    assert ran.runner.dispatched == []
+    assert ran.names() == ["run_started", "halted"]

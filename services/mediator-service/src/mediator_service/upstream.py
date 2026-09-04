@@ -223,6 +223,12 @@ class ProjectClient:
 
         return to_snapshot(parsed)
 
+    async def stored_step(self, step_id: str) -> dict[str, Any]:
+        return await self._object("GET", f"/steps/{step_id}", None)
+
+    async def stored_plan(self, plan_id: str) -> dict[str, Any]:
+        return await self._object("GET", f"/plans/{plan_id}", None)
+
     async def move_task(self, task_id: str, state: str, reason: str | None) -> Task:
         body: dict[str, Any] = {"state": state, "reason": reason, "actor": ACTOR}
         parsed = await self._object("POST", f"/tasks/{task_id}/state", body)
