@@ -18,13 +18,13 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from mediator_service import SERVICE_NAME, decomposition
+from mediator_service import SERVICE_NAME, decomposition, resume
 from mediator_service.broker import BrokerClient, BrokerError, BrokerUnreachableError
 from mediator_service.config import settings
 from mediator_service.context import BriefFacts, MediatorContext
 from mediator_service.discipline import TreeRejectedError
 from mediator_service.dispatch import RouterClient, RunnerClient
-from mediator_service.execution import Clients
+from mediator_service.execution import Clients, Resumption
 from mediator_service.loop import RunLoop
 from mediator_service.manifest import (
     ManifestUnavailableError,
@@ -38,6 +38,7 @@ from mediator_service.persist import (
     ProjectServiceUnreachableError,
     store,
 )
+from mediator_service.resume import NotAwaitingConfirmationError
 from mediator_service.sequencing import SequencingError
 from mediator_service.tree import MediatorParseError
 from mediator_service.upstream import ProjectClient as UpstreamProjectClient
@@ -157,6 +158,14 @@ async def on_rejected(request: Request, exc: TreeRejectedError) -> JSONResponse:
     return JSONResponse(
         status_code=502,
         content={"error": "tree_rejected", "findings": list(exc.findings)},
+    )
+
+
+@app.exception_handler(NotAwaitingConfirmationError)
+async def on_not_awaiting(request: Request, exc: NotAwaitingConfirmationError) -> JSONResponse:
+    return JSONResponse(
+        status_code=409,
+        content={"error": "not_awaiting_confirmation", "detail": str(exc)},
     )
 
 
@@ -291,6 +300,12 @@ async def read_brief(client: httpx.AsyncClient, project_id: str) -> BriefFacts:
     return facts
 
 
+def project_reader() -> UpstreamProjectClient:
+    resolved = settings()
+
+    return UpstreamProjectClient(resolved.project_service_url, resolved.upstream_timeout_seconds)
+
+
 def clients_for_run() -> Clients:
     resolved = settings()
 
@@ -386,5 +401,33 @@ async def run_project(project_id: str, request_id: str | None = None) -> Streami
 
     clients = clients_for_run()
     loop = RunLoop(clients, halt_state, project_id, request_id or str(uuid4()))
+
+    return StreamingResponse(drain(loop, clients), media_type=NDJSON)
+
+
+@app.post("/steps/{step_id}/confirm")
+async def confirm_step(step_id: str, request_id: str | None = None) -> StreamingResponse:
+    halt_state.guard()
+
+    projects = project_reader()
+
+    try:
+        parked = resume.to_parked(await projects.stored_step(step_id))
+
+        resume.assert_confirmable(parked)
+
+        stored = await projects.stored_plan(parked.plan_id)
+    finally:
+        await projects.close()
+
+    plan = resume.rebuild(stored)
+    clients = clients_for_run()
+    loop = RunLoop(
+        clients,
+        halt_state,
+        plan.project_id,
+        request_id or str(uuid4()),
+        Resumption(plan, step_id),
+    )
 
     return StreamingResponse(drain(loop, clients), media_type=NDJSON)
