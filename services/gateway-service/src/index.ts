@@ -19,6 +19,14 @@ import {
 } from "./broker-client.js";
 import { config } from "./config.js";
 import { broadcast, isHaltReason } from "./halt.js";
+import {
+  ProjectError,
+  createTask,
+  fetchProgress,
+  listTasks,
+  moveTask,
+  projectHealthy,
+} from "./project-client.js";
 import { listMessages, persistMessage, taskStoreHealthy } from "./task-store-client.js";
 
 export const SERVICE_NAME = "gateway-service";
@@ -101,12 +109,30 @@ export function buildServer() {
     }
   };
 
+  const viaProject = async <T>(
+    reply: FastifyReply,
+    run: () => Promise<T>,
+  ): Promise<T | FastifyReply> => {
+    try {
+      return await run();
+    } catch (error) {
+      if (error instanceof ProjectError) {
+        app.log.warn({ status: error.status, detail: error.detail }, "project-service refused");
+        return reply.status(error.status).send({ error: error.detail });
+      }
+
+      app.log.error({ err: error }, "project-service unreachable");
+      return reply.status(503).send({ error: "project-service unavailable" });
+    }
+  };
+
   app.get("/health", async () => ({
     service: SERVICE_NAME,
     status: "ok",
     task_store: (await taskStoreHealthy()) ? "ok" : "unreachable",
     bootstrap: (await bootstrapHealthy()) ? "ok" : "unreachable",
     model_broker: (await brokerHealthy()) ? "ok" : "unreachable",
+    project_service: (await projectHealthy()) ? "ok" : "unreachable",
   }));
 
   app.get("/messages", async () => listMessages());
@@ -174,6 +200,67 @@ export function buildServer() {
       app.log.error({ err: error, modelId }, "pull failed to start");
       return reply.status(503).send({ error: "model-broker unavailable" });
     }
+  });
+
+  app.get("/projects/:projectId/tasks", async (request, reply) => {
+    const params = request.params as { projectId: string };
+    return viaProject(reply, () => listTasks(params.projectId));
+  });
+
+  app.get("/projects/:projectId/progress", async (request, reply) => {
+    const params = request.params as { projectId: string };
+    return viaProject(reply, () => fetchProgress(params.projectId));
+  });
+
+  app.post("/projects/:projectId/tasks", async (request, reply) => {
+    const params = request.params as { projectId: string };
+    const body = request.body as {
+      title?: unknown;
+      kind?: unknown;
+      description?: unknown;
+      parent_id?: unknown;
+      depends_on?: unknown;
+    } | null;
+
+    if (body === null || typeof body.title !== "string" || body.title.trim() === "") {
+      return reply.status(400).send({ error: "title is required" });
+    }
+
+    if (typeof body.kind !== "string" || body.kind.trim() === "") {
+      return reply.status(400).send({ error: "kind is required" });
+    }
+
+    const draft = {
+      title: body.title,
+      kind: body.kind,
+      origin: "user",
+      description: typeof body.description === "string" ? body.description : "",
+      parent_id: typeof body.parent_id === "string" ? body.parent_id : null,
+      depends_on: Array.isArray(body.depends_on)
+        ? body.depends_on.filter((entry): entry is string => typeof entry === "string")
+        : [],
+    };
+
+    reply.status(201);
+
+    return viaProject(reply, () => createTask(params.projectId, draft));
+  });
+
+  app.post("/tasks/:taskId/state", async (request, reply) => {
+    const params = request.params as { taskId: string };
+    const body = request.body as { state?: unknown; reason?: unknown; actor?: unknown } | null;
+
+    if (body === null || typeof body.state !== "string" || body.state.trim() === "") {
+      return reply.status(400).send({ error: "state is required" });
+    }
+
+    const move = {
+      state: body.state,
+      reason: typeof body.reason === "string" && body.reason.trim() !== "" ? body.reason : null,
+      actor: typeof body.actor === "string" && body.actor.trim() !== "" ? body.actor : "user",
+    };
+
+    return viaProject(reply, () => moveTask(params.taskId, move));
   });
 
   app.post("/halt", async (request, reply) => {
