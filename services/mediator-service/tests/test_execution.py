@@ -30,6 +30,7 @@ from mediator_service.execution import (
     MAX_REPLAN_ATTEMPTS,
     NO_RESULT,
     Clients,
+    Resumption,
     TaskPass,
 )
 from mediator_service.persist import ProjectServiceError, ProjectServiceUnreachableError
@@ -344,6 +345,7 @@ async def run_pass(
     project_failures: dict[str, Exception] | None = None,
     halt_after: int | None = None,
     replan_limit: int = MAX_REPLAN_ATTEMPTS,
+    resumption: Resumption | None = None,
 ) -> Ran:
     plans = tuple(
         plan_of(*entry, plan_id=f"pl-{index + 1}")
@@ -363,6 +365,7 @@ async def run_pass(
         1,
         Halt(halt_after),
         replan_limit,
+        resumption,
     )
 
     ran = Ran(walker, router, runner, project)
@@ -798,3 +801,129 @@ async def test_a_step_routed_elsewhere_can_be_replanned() -> None:
     assert len(ran.router.calls) == 2
     assert [entry[0] for entry in ran.runner.dispatched] == ["s-9"]
     assert ran.run.state == COMPLETED
+
+
+def resuming(*steps: dict[str, Any], at: str, plan_id: str = "pl-9") -> Resumption:
+    return Resumption(plan_of(*steps, plan_id=plan_id), at)
+
+
+def parked_plan() -> tuple[dict[str, Any], ...]:
+    return (step_body("s-1"), step_body("s-2", 1, True), step_body("s-3", 2))
+
+
+async def a_confirmed_run() -> Ran:
+    return await run_pass(
+        task_state="awaiting_confirmation",
+        resumption=resuming(*parked_plan(), at="s-2"),
+        scripts={"s-2": [succeeded("s-2")], "s-3": [succeeded("s-3")]},
+    )
+
+
+async def test_a_resumed_pass_takes_the_stored_plan_instead_of_asking_the_router() -> None:
+    ran = await a_confirmed_run()
+
+    assert ran.router.calls == []
+    assert ran.one("plan_ready")["plan_id"] == "pl-9"
+
+
+async def test_the_confirmed_step_is_dispatched_as_confirmed() -> None:
+    ran = await a_confirmed_run()
+
+    assert ran.runner.dispatched[0] == ("s-2", SCOPE_ROOT, TASK_ID, True)
+
+
+async def test_steps_before_the_confirmed_one_are_not_run_again() -> None:
+    ran = await a_confirmed_run()
+
+    assert [entry[0] for entry in ran.runner.dispatched] == ["s-2", "s-3"]
+
+
+async def test_a_step_before_the_confirmed_one_is_not_touched_in_project_service() -> None:
+    ran = await a_confirmed_run()
+
+    assert "s-1" not in [step_id for step_id, _ in ran.step_states()]
+
+
+async def test_the_approval_does_not_spread_to_the_step_after_it() -> None:
+    ran = await a_confirmed_run()
+
+    assert [entry[3] for entry in ran.runner.dispatched] == [True, False]
+
+
+async def test_a_resumed_task_is_moved_out_of_awaiting_confirmation() -> None:
+    ran = await a_confirmed_run()
+
+    assert ran.task_states()[0] == "in_progress"
+
+
+async def test_a_resumed_task_that_finishes_its_plan_is_concluded_done() -> None:
+    ran = await a_confirmed_run()
+
+    assert ran.run.state == COMPLETED
+    assert ran.task_states()[-2:] == ["verifying", "done"]
+
+
+async def test_a_later_gated_step_parks_the_task_again() -> None:
+    ran = await run_pass(
+        task_state="awaiting_confirmation",
+        resumption=resuming(
+            step_body("s-1"), step_body("s-2", 1, True), step_body("s-3", 2, True), at="s-2"
+        ),
+        scripts={"s-2": [succeeded("s-2")]},
+    )
+
+    assert [entry[0] for entry in ran.runner.dispatched] == ["s-2"]
+    assert ran.run.state == AWAITING
+    assert ran.run.awaiting_step_id == "s-3"
+
+
+async def test_a_confirmed_step_absent_from_the_plan_fails_rather_than_completing() -> None:
+    ran = await run_pass(
+        task_state="awaiting_confirmation",
+        resumption=resuming(*parked_plan(), at="s-99"),
+    )
+
+    assert ran.runner.dispatched == []
+    assert ran.run.state == FAILED
+    assert "not part of plan pl-9" in str(ran.run.reason)
+
+
+async def test_a_halt_stops_the_resume_before_the_confirmed_step_runs() -> None:
+    ran = await run_pass(
+        task_state="awaiting_confirmation",
+        resumption=resuming(*parked_plan(), at="s-2"),
+        scripts={"s-2": [succeeded("s-2")]},
+        halt_after=0,
+    )
+
+    assert ran.runner.dispatched == []
+    assert ran.run.state == HALTED
+
+
+async def test_a_resumed_pass_that_replans_goes_back_to_the_router() -> None:
+    ran = await run_pass(
+        steps=(step_body("s-9"),),
+        task_state="awaiting_confirmation",
+        resumption=resuming(
+            step_body("s-1"), step_body("s-2", 1, True, on_failure="replan"), at="s-2"
+        ),
+        scripts={"s-2": [failed("s-2")], "s-9": [succeeded("s-9")]},
+    )
+
+    assert len(ran.router.calls) == 1
+    assert [entry[0] for entry in ran.runner.dispatched] == ["s-2", "s-9"]
+    assert ran.run.replans == 1
+    assert ran.run.state == COMPLETED
+
+
+async def test_the_plan_that_replaces_a_resumed_one_carries_no_confirmation() -> None:
+    ran = await run_pass(
+        steps=(step_body("s-9"),),
+        task_state="awaiting_confirmation",
+        resumption=resuming(
+            step_body("s-1"), step_body("s-2", 1, True, on_failure="replan"), at="s-2"
+        ),
+        scripts={"s-2": [failed("s-2")], "s-9": [succeeded("s-9")]},
+    )
+
+    assert [entry[3] for entry in ran.runner.dispatched] == [True, False]

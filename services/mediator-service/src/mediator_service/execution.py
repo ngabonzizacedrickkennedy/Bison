@@ -76,6 +76,12 @@ class Clients:
     project: ProjectClient
 
 
+@dataclass(frozen=True)
+class Resumption:
+    plan: Plan
+    step_id: str
+
+
 def ordered(steps: tuple[Step, ...]) -> tuple[Step, ...]:
     return tuple(sorted(steps, key=lambda step: step.position))
 
@@ -88,6 +94,10 @@ def undispatchable(step: Step) -> str:
         )
 
     return f"step {step.step_id} carries no action the runner can execute"
+
+
+def not_in_plan(step_id: str, plan_id: str) -> str:
+    return f"the confirmed step {step_id} is not part of plan {plan_id}"
 
 
 def exhausted(failure: str, limit: int) -> str:
@@ -131,6 +141,7 @@ class TaskPass:
         tasks_total: int,
         halted: Callable[[], bool],
         replan_limit: int = MAX_REPLAN_ATTEMPTS,
+        resumption: Resumption | None = None,
     ) -> None:
         self._clients = clients
         self._emitter = emitter
@@ -141,6 +152,7 @@ class TaskPass:
         self._tasks_total = tasks_total
         self._halted = halted
         self._replan_limit = replan_limit
+        self._resumption = resumption
         self._results: list[Result] = []
         self._outcomes: list[Outcome] = []
         self._exit = WALK_ENDED
@@ -187,12 +199,13 @@ class TaskPass:
     async def _walk(self) -> AsyncIterator[bytes]:
         await self._begin()
 
+        confirmed_step_id = self._resumption.step_id if self._resumption is not None else None
         plan = await self._plan()
 
         yield self._announce(plan)
 
         while True:
-            async for chunk in self._steps(plan):
+            async for chunk in self._steps(plan, confirmed_step_id):
                 yield chunk
 
             if self._exit == WALK_STOPPED:
@@ -219,6 +232,7 @@ class TaskPass:
                 )
             )
 
+            confirmed_step_id = None
             plan = await self._plan()
 
             yield self._announce(plan)
@@ -229,12 +243,19 @@ class TaskPass:
         self.state = FAILED if self._failure is not None else COMPLETED
         self.reason = self._failure
 
-    async def _steps(self, plan: Plan) -> AsyncIterator[bytes]:
+    async def _steps(self, plan: Plan, confirmed_step_id: str | None) -> AsyncIterator[bytes]:
         self._exit = WALK_ENDED
         self._failure = None
         failure: str | None = None
+        reached = confirmed_step_id is None
 
         for step in ordered(plan.steps):
+            if not reached:
+                if step.step_id != confirmed_step_id:
+                    continue
+
+                reached = True
+
             if self._halted():
                 self.state = HALTED
                 self.reason = HALT_REASON
@@ -242,7 +263,9 @@ class TaskPass:
 
                 return
 
-            if step.requires_confirmation:
+            confirmed = step.step_id == confirmed_step_id
+
+            if step.requires_confirmation and not confirmed:
                 async for chunk in self._gate(step):
                     yield chunk
 
@@ -262,7 +285,7 @@ class TaskPass:
 
             before = len(self._results)
 
-            async for chunk in self._run(step, plan):
+            async for chunk in self._run(step, plan, confirmed):
                 yield chunk
 
             failure = self._verdict(before)
@@ -271,6 +294,11 @@ class TaskPass:
                 continue
 
             self._decide(failure, step)
+
+            return
+
+        if not reached and confirmed_step_id is not None:
+            self._failure = not_in_plan(confirmed_step_id, plan.plan_id)
 
             return
 
@@ -291,6 +319,13 @@ class TaskPass:
         self._exit = WALK_REPLANNING
 
     async def _plan(self) -> Plan:
+        resumption = self._resumption
+
+        if resumption is not None:
+            self._resumption = None
+
+            return resumption.plan
+
         return await self._clients.router.plan(self._project_id, self._task.id, self._request_id)
 
     def _announce(self, plan: Plan) -> bytes:
@@ -333,14 +368,14 @@ class TaskPass:
             )
         )
 
-    async def _run(self, step: Step, plan: Plan) -> AsyncIterator[bytes]:
+    async def _run(self, step: Step, plan: Plan, confirmed: bool) -> AsyncIterator[bytes]:
         await self._clients.project.move_step(step.step_id, STEP_RUNNING, None)
 
         yield self._emitter.emit(
             events.step_started(self._task.id, step.step_id, step.position, step.description)
         )
 
-        stream = self._clients.runner.dispatch(step, plan.scope_root, self._task.id, False)
+        stream = self._clients.runner.dispatch(step, plan.scope_root, self._task.id, confirmed)
 
         async for event in stream:
             if isinstance(event, Output):
