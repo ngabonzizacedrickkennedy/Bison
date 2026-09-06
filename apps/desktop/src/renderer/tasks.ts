@@ -1,4 +1,4 @@
-import { PROJECT_ID, describeFailure } from "./broker.js";
+import { PROJECT_ID, describeFailure } from "./broker";
 
 export interface Task {
   id: string;
