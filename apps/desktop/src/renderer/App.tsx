@@ -3,10 +3,12 @@ import { ActivityBar } from "./ActivityBar";
 import { CapabilityBar } from "./CapabilityBar";
 import { ModelPicker } from "./ModelPicker";
 import { RoleBar } from "./RoleBar";
+import { TaskList } from "./TaskList";
 import type { Role } from "./broker";
 import { useBindings } from "./useBindings";
 import { useCapabilities } from "./useCapabilities";
 import { useGateway } from "./useGateway";
+import { useTasks } from "./useTasks";
 import "./styles.css";
 
 export function App() {
@@ -18,7 +20,9 @@ export function App() {
   const { bindingsState, bindings, installed, rebind, refreshInstalled } = useBindings(
     window.bison.gatewayHttpUrl,
   );
+  const { tasksState, tasks, progress, transition } = useTasks(window.bison.gatewayHttpUrl);
   const [draft, setDraft] = useState("");
+  const [taskError, setTaskError] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [pickerRole, setPickerRole] = useState<Role | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -48,6 +52,13 @@ export function App() {
     };
   }, [busy]);
 
+  const move = (taskId: string, state: string, reason: string | null) => {
+    setTaskError(null);
+    transition(taskId, state, reason).catch((error: unknown) => {
+      setTaskError(error instanceof Error ? error.message : String(error));
+    });
+  };
+
   const submit = (submitEvent: FormEvent) => {
     submitEvent.preventDefault();
     const content = draft.trim();
@@ -74,6 +85,10 @@ export function App() {
       <CapabilityBar manifestState={manifestState} manifest={manifest} />
 
       <RoleBar bindingsState={bindingsState} bindings={bindings} onPick={setPickerRole} />
+
+      <TaskList tasksState={tasksState} tasks={tasks} progress={progress} onTransition={move} />
+
+      {taskError !== null && <div className="picker-error">{taskError}</div>}
 
       <div className="stream">
         {messages.map((message) => (
