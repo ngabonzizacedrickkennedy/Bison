@@ -20,6 +20,13 @@ import {
 import { config } from "./config.js";
 import { broadcast, isHaltReason } from "./halt.js";
 import {
+  MediatorError,
+  buildTree,
+  mediatorHealthy,
+  openConfirm,
+  openRun,
+} from "./mediator-client.js";
+import {
   ProjectError,
   createTask,
   fetchProgress,
@@ -126,6 +133,23 @@ export function buildServer() {
     }
   };
 
+  const viaMediator = async <T>(
+    reply: FastifyReply,
+    run: () => Promise<T>,
+  ): Promise<T | FastifyReply> => {
+    try {
+      return await run();
+    } catch (error) {
+      if (error instanceof MediatorError) {
+        app.log.warn({ status: error.status, detail: error.detail }, "mediator refused");
+        return reply.status(error.status).send({ error: error.detail });
+      }
+
+      app.log.error({ err: error }, "mediator unreachable");
+      return reply.status(503).send({ error: "mediator-service unavailable" });
+    }
+  };
+
   app.get("/health", async () => ({
     service: SERVICE_NAME,
     status: "ok",
@@ -133,6 +157,7 @@ export function buildServer() {
     bootstrap: (await bootstrapHealthy()) ? "ok" : "unreachable",
     model_broker: (await brokerHealthy()) ? "ok" : "unreachable",
     project_service: (await projectHealthy()) ? "ok" : "unreachable",
+    mediator: (await mediatorHealthy()) ? "ok" : "unreachable",
   }));
 
   app.get("/messages", async () => listMessages());
@@ -261,6 +286,58 @@ export function buildServer() {
     };
 
     return viaProject(reply, () => moveTask(params.taskId, move));
+  });
+
+  app.post("/projects/:projectId/tree", async (request, reply) => {
+    const params = request.params as { projectId: string };
+    const query = request.query as { request_id?: string };
+    const requestId = typeof query.request_id === "string" ? query.request_id : null;
+
+    return viaMediator(reply, () => buildTree(params.projectId, requestId));
+  });
+
+  app.post("/projects/:projectId/run", async (request, reply) => {
+    const params = request.params as { projectId: string };
+    const query = request.query as { request_id?: string };
+    const requestId = typeof query.request_id === "string" ? query.request_id : randomUUID();
+
+    try {
+      const stream = await openRun(params.projectId, requestId);
+      return reply
+        .header("content-type", "application/x-ndjson")
+        .header("x-bison-request-id", requestId)
+        .send(stream);
+    } catch (error) {
+      if (error instanceof MediatorError) {
+        app.log.warn({ status: error.status, detail: error.detail }, "run refused");
+        return reply.status(error.status).send({ error: error.detail });
+      }
+
+      app.log.error({ err: error }, "run failed to start");
+      return reply.status(503).send({ error: "mediator-service unavailable" });
+    }
+  });
+
+  app.post("/steps/:stepId/confirm", async (request, reply) => {
+    const params = request.params as { stepId: string };
+    const query = request.query as { request_id?: string };
+    const requestId = typeof query.request_id === "string" ? query.request_id : randomUUID();
+
+    try {
+      const stream = await openConfirm(params.stepId, requestId);
+      return reply
+        .header("content-type", "application/x-ndjson")
+        .header("x-bison-request-id", requestId)
+        .send(stream);
+    } catch (error) {
+      if (error instanceof MediatorError) {
+        app.log.warn({ status: error.status, detail: error.detail }, "confirm refused");
+        return reply.status(error.status).send({ error: error.detail });
+      }
+
+      app.log.error({ err: error }, "confirm failed to start");
+      return reply.status(503).send({ error: "mediator-service unavailable" });
+    }
   });
 
   app.post("/halt", async (request, reply) => {
