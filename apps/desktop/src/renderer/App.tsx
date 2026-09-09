@@ -1,13 +1,15 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { ActivityBar } from "./ActivityBar";
 import { CapabilityBar } from "./CapabilityBar";
 import { ModelPicker } from "./ModelPicker";
 import { RoleBar } from "./RoleBar";
+import { RunPanel } from "./RunPanel";
 import { TaskList } from "./TaskList";
 import type { Role } from "./broker";
 import { useBindings } from "./useBindings";
 import { useCapabilities } from "./useCapabilities";
 import { useGateway } from "./useGateway";
+import { useRun } from "./useRun";
 import { useTasks } from "./useTasks";
 import "./styles.css";
 
@@ -20,12 +22,22 @@ export function App() {
   const { bindingsState, bindings, installed, rebind, refreshInstalled } = useBindings(
     window.bison.gatewayHttpUrl,
   );
-  const { tasksState, tasks, progress, transition } = useTasks(window.bison.gatewayHttpUrl);
+  const { tasksState, tasks, progress, refresh, transition } = useTasks(
+    window.bison.gatewayHttpUrl,
+  );
   const [draft, setDraft] = useState("");
   const [taskError, setTaskError] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [pickerRole, setPickerRole] = useState<Role | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const settle = useCallback(() => {
+    void refresh().catch(() => {
+      setTaskError("the task tree could not be refreshed");
+    });
+  }, [refresh]);
+
+  const { run, start, confirm } = useRun(window.bison.gatewayHttpUrl, settle);
 
   const busy = activity.phase === "invoking";
   const pickerBinding = bindings.find((binding) => binding.role === pickerRole);
@@ -87,6 +99,8 @@ export function App() {
       <RoleBar bindingsState={bindingsState} bindings={bindings} onPick={setPickerRole} />
 
       <TaskList tasksState={tasksState} tasks={tasks} progress={progress} onTransition={move} />
+
+      <RunPanel run={run} onStart={start} onConfirm={confirm} />
 
       {taskError !== null && <div className="picker-error">{taskError}</div>}
 

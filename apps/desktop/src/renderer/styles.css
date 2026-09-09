@@ -559,3 +559,177 @@ body {
   opacity: 0.3;
   cursor: default;
 }
+
+.run {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #26262b;
+  font-size: 12px;
+  color: #8a8a94;
+}
+
+.run-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.run-title {
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 10px;
+  color: #6f6f78;
+}
+
+.run-phase {
+  color: #e6e6e6;
+}
+
+.run.finished .run-phase {
+  color: #6cc07a;
+}
+
+.run.awaiting .run-phase {
+  color: #d8a24a;
+}
+
+.run.halted .run-phase,
+.run.errored .run-phase {
+  color: #d76a6a;
+}
+
+.run-counts {
+  flex: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-percentage {
+  color: #e6e6e6;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-start {
+  padding: 3px 12px;
+  border: 1px solid #2f2f36;
+  border-radius: 3px;
+  background: #1a1a1f;
+  color: #b4b4bc;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.run-start:hover:not(:disabled) {
+  border-color: #3f3f48;
+  color: #e6e6e6;
+}
+
+.run-start:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.run-current {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 5px 8px;
+  border: 1px solid #2f2f36;
+  border-radius: 3px;
+}
+
+.run-task {
+  color: #e6e6e6;
+  white-space: nowrap;
+}
+
+.run-step {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-gate {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #574012;
+  border-radius: 3px;
+  background: #1d1810;
+}
+
+.run-gate-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.run-gate-label {
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-size: 10px;
+  color: #d8a24a;
+}
+
+.run-gate-action {
+  color: #e6e6e6;
+  font-size: 13px;
+}
+
+.run-gate-reason {
+  color: #8a8a94;
+}
+
+.run-continue {
+  padding: 7px 20px;
+  border: 1px solid #2f6feb;
+  border-radius: 3px;
+  background: #2f6feb;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.run-continue:hover:not(:disabled) {
+  background: #3b7df0;
+}
+
+.run-continue:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.run-output {
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid #26262b;
+  border-radius: 3px;
+  background: #0d0d10;
+  font-family: "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.run-line {
+  color: #b4b4bc;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.run-line.stderr {
+  color: #d76a6a;
+}
+
+.run-detail {
+  color: #8a8a94;
+}
+
+.run.errored .run-detail {
+  color: #d76a6a;
+}
