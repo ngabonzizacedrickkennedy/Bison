@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { ActivityBar } from "./ActivityBar";
+import { AddTask } from "./AddTask";
 import { CapabilityBar } from "./CapabilityBar";
 import { ModelPicker } from "./ModelPicker";
 import { RoleBar } from "./RoleBar";
 import { RunPanel } from "./RunPanel";
 import { TaskList } from "./TaskList";
 import type { Role } from "./broker";
+import type { TaskDraft } from "./tasks";
 import { useBindings } from "./useBindings";
 import { useCapabilities } from "./useCapabilities";
 import { useGateway } from "./useGateway";
@@ -22,7 +24,7 @@ export function App() {
   const { bindingsState, bindings, installed, rebind, refreshInstalled } = useBindings(
     window.bison.gatewayHttpUrl,
   );
-  const { tasksState, tasks, progress, refresh, transition } = useTasks(
+  const { tasksState, tasks, progress, refresh, addTask, transition } = useTasks(
     window.bison.gatewayHttpUrl,
   );
   const [draft, setDraft] = useState("");
@@ -71,6 +73,20 @@ export function App() {
     });
   };
 
+  const add = async (draft: TaskDraft): Promise<boolean> => {
+    setTaskError(null);
+
+    try {
+      await addTask(draft);
+
+      return true;
+    } catch (error) {
+      setTaskError(error instanceof Error ? error.message : String(error));
+
+      return false;
+    }
+  };
+
   const submit = (submitEvent: FormEvent) => {
     submitEvent.preventDefault();
     const content = draft.trim();
@@ -99,6 +115,8 @@ export function App() {
       <RoleBar bindingsState={bindingsState} bindings={bindings} onPick={setPickerRole} />
 
       <TaskList tasksState={tasksState} tasks={tasks} progress={progress} onTransition={move} />
+
+      <AddTask onAdd={add} />
 
       <RunPanel run={run} onStart={start} onConfirm={confirm} />
 

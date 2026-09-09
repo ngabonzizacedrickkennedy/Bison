@@ -733,3 +733,71 @@ body {
 .run.errored .run-detail {
   color: #d76a6a;
 }
+
+.add-task {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #26262b;
+}
+
+.add-task input,
+.add-task select {
+  padding: 5px 8px;
+  border: 1px solid #2f2f36;
+  border-radius: 3px;
+  background: #16161a;
+  color: #e6e6e6;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.add-task input:focus,
+.add-task select:focus {
+  outline: none;
+  border-color: #3f3f48;
+}
+
+.add-task input::placeholder {
+  color: #5c5c66;
+}
+
+.add-task-title {
+  flex: 2;
+  min-width: 0;
+}
+
+.add-task-description {
+  flex: 3;
+  min-width: 0;
+}
+
+.add-task-kind {
+  cursor: pointer;
+}
+
+.add-task button {
+  padding: 5px 14px;
+  border: 1px solid #2f2f36;
+  border-radius: 3px;
+  background: #1a1a1f;
+  color: #b4b4bc;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.add-task button:hover:not(:disabled) {
+  border-color: #3f3f48;
+  color: #e6e6e6;
+}
+
+.add-task button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.add-task input:disabled,
+.add-task select:disabled {
+  opacity: 0.4;
+}
