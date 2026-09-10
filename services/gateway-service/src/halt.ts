@@ -36,6 +36,43 @@ export interface HaltSignal {
   silent_count: number;
 }
 
+export interface RecipientHaltState {
+  service: string;
+  reachable: boolean;
+  halted: boolean | null;
+  boundary: string | null;
+  reason: HaltReason | null;
+  signal_id: string | null;
+  halted_at: string | null;
+  status: number | null;
+  detail: string | null;
+  latency_ms: number;
+}
+
+export interface HaltStateReport {
+  halted: boolean;
+  halted_count: number;
+  reachable_count: number;
+  silent_count: number;
+  recipients: RecipientHaltState[];
+}
+
+export interface RecipientResume {
+  service: string;
+  resumed: boolean;
+  status: number | null;
+  detail: string | null;
+  latency_ms: number;
+}
+
+export interface ResumeReport {
+  actor: string;
+  resumed: boolean;
+  resumed_count: number;
+  silent_count: number;
+  recipients: RecipientResume[];
+}
+
 export interface HaltInstruction {
   reason: HaltReason;
   requestId?: string | null;
@@ -63,45 +100,151 @@ function describe(error: unknown): string {
   return String(error);
 }
 
-async function notify(
-  recipient: HaltRecipient,
-  signal: Omit<HaltSignal, "recipients" | "acknowledged_count" | "silent_count">,
-): Promise<RecipientAcknowledgement> {
+interface Reached {
+  ok: boolean;
+  status: number | null;
+  payload: Record<string, unknown> | null;
+  detail: string | null;
+  latency_ms: number;
+}
+
+async function reach(url: string, method: "GET" | "POST", body?: unknown): Promise<Reached> {
   const started = Date.now();
+  const carried = body === undefined ? null : JSON.stringify(body);
 
   try {
-    const response = await request(`${recipient.url}/halt`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        id: signal.id,
-        reason: signal.reason,
-        request_id: signal.request_id,
-        project_id: signal.project_id,
-        task_id: signal.task_id,
-        issued_at: signal.issued_at,
-      }),
+    const response = await request(url, {
+      method,
+      headers: carried === null ? {} : { "content-type": "application/json" },
+      body: carried,
       signal: AbortSignal.timeout(config.haltTimeoutMs),
     });
 
-    await response.body.dump();
+    const text = await response.body.text();
+    let payload: Record<string, unknown> | null = null;
+
+    try {
+      const parsed: unknown = JSON.parse(text);
+      payload =
+        typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : null;
+    } catch {
+      payload = null;
+    }
 
     return {
-      service: recipient.service,
-      acknowledged: response.statusCode >= 200 && response.statusCode < 300,
+      ok: response.statusCode >= 200 && response.statusCode < 300,
       status: response.statusCode,
+      payload,
       detail: null,
       latency_ms: Date.now() - started,
     };
   } catch (error) {
     return {
-      service: recipient.service,
-      acknowledged: false,
+      ok: false,
       status: null,
+      payload: null,
       detail: describe(error),
       latency_ms: Date.now() - started,
     };
   }
+}
+
+function bool(payload: Record<string, unknown> | null, key: string): boolean | null {
+  const value = payload?.[key];
+
+  return typeof value === "boolean" ? value : null;
+}
+
+function str(payload: Record<string, unknown> | null, key: string): string | null {
+  const value = payload?.[key];
+
+  return typeof value === "string" ? value : null;
+}
+
+async function notify(
+  recipient: HaltRecipient,
+  signal: Omit<HaltSignal, "recipients" | "acknowledged_count" | "silent_count">,
+): Promise<RecipientAcknowledgement> {
+  const reached = await reach(`${recipient.url}/halt`, "POST", {
+    id: signal.id,
+    reason: signal.reason,
+    request_id: signal.request_id,
+    project_id: signal.project_id,
+    task_id: signal.task_id,
+    issued_at: signal.issued_at,
+  });
+
+  return {
+    service: recipient.service,
+    acknowledged: reached.ok,
+    status: reached.status,
+    detail: reached.detail,
+    latency_ms: reached.latency_ms,
+  };
+}
+
+async function probe(recipient: HaltRecipient): Promise<RecipientHaltState> {
+  const reached = await reach(`${recipient.url}/halt/state`, "GET");
+  const signal = reached.payload?.["signal"];
+  const carried =
+    typeof signal === "object" && signal !== null ? (signal as Record<string, unknown>) : null;
+  const reason = str(carried, "reason");
+
+  return {
+    service: recipient.service,
+    reachable: reached.ok,
+    halted: reached.ok ? bool(reached.payload, "halted") : null,
+    boundary: str(reached.payload, "boundary"),
+    reason: isHaltReason(reason) ? reason : null,
+    signal_id: str(carried, "id"),
+    halted_at: str(reached.payload, "halted_at"),
+    status: reached.status,
+    detail: reached.detail,
+    latency_ms: reached.latency_ms,
+  };
+}
+
+async function revive(recipient: HaltRecipient, actor: string): Promise<RecipientResume> {
+  const reached = await reach(`${recipient.url}/halt/resume`, "POST", { actor });
+
+  return {
+    service: recipient.service,
+    resumed: reached.ok,
+    status: reached.status,
+    detail: reached.detail,
+    latency_ms: reached.latency_ms,
+  };
+}
+
+export async function readState(
+  targets: readonly HaltRecipient[] = recipients,
+): Promise<HaltStateReport> {
+  const settled = await Promise.all(targets.map((target) => probe(target)));
+  const halted = settled.filter((entry) => entry.halted === true);
+
+  return {
+    halted: halted.length > 0,
+    halted_count: halted.length,
+    reachable_count: settled.filter((entry) => entry.reachable).length,
+    silent_count: settled.filter((entry) => !entry.reachable).length,
+    recipients: settled,
+  };
+}
+
+export async function resumeAll(
+  actor: string,
+  targets: readonly HaltRecipient[] = recipients,
+): Promise<ResumeReport> {
+  const settled = await Promise.all(targets.map((target) => revive(target, actor)));
+  const resumed = settled.filter((entry) => entry.resumed);
+
+  return {
+    actor,
+    resumed: resumed.length === settled.length,
+    resumed_count: resumed.length,
+    silent_count: settled.length - resumed.length,
+    recipients: settled,
+  };
 }
 
 export async function broadcast(

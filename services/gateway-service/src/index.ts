@@ -18,7 +18,7 @@ import {
   refreshCatalog,
 } from "./broker-client.js";
 import { config } from "./config.js";
-import { broadcast, isHaltReason } from "./halt.js";
+import { broadcast, isHaltReason, readState, resumeAll } from "./halt.js";
 import {
   MediatorError,
   buildTree,
@@ -338,6 +338,26 @@ export function buildServer() {
       app.log.error({ err: error }, "confirm failed to start");
       return reply.status(503).send({ error: "mediator-service unavailable" });
     }
+  });
+
+  app.get("/halt/state", async () => readState());
+
+  app.post("/halt/resume", async (request) => {
+    const body = request.body as { actor?: unknown } | null;
+    const actor = typeof body?.actor === "string" && body.actor.trim() !== "" ? body.actor : "user";
+
+    const report = await resumeAll(actor);
+
+    app.log.warn(
+      { actor, resumed: report.resumed_count, silent: report.silent_count },
+      "HALT resume broadcast",
+    );
+
+    for (const emit of clients) {
+      emit("halt_resumed", actor, report);
+    }
+
+    return report;
   });
 
   app.post("/halt", async (request, reply) => {
