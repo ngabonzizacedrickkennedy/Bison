@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from router_service.context import (
     BriefFacts,
+    Capability,
     Criterion,
     HistoryEntry,
+    MachineFacts,
     RouterContext,
     TaskFacts,
     criterion_ids,
@@ -11,6 +13,18 @@ from router_service.context import (
 )
 
 SCOPE = r"C:\Users\dev\bison\workspace"
+
+MACHINE = MachineFacts(
+    os_version="Windows 11 Pro 26100",
+    cpu_cores=8,
+    ram_gb=16.0,
+    free_disk_gb=214.5,
+    capabilities=[
+        Capability(name="sandbox", backend="job_object", strength="medium"),
+        Capability(name="database", backend="sqlite", strength="full"),
+        Capability(name="secrets", backend=None, strength="unavailable"),
+    ],
+)
 
 
 def criterion(index: int) -> Criterion:
@@ -32,6 +46,7 @@ def context(**overrides: object) -> RouterContext:
         ),
         "criteria": [criterion(1), criterion(2)],
         "scope_root": SCOPE,
+        "machine": MACHINE,
         "brief": BriefFacts(
             interpreted_goal="Match every invoice to a payment",
             project_type="code",
@@ -52,8 +67,42 @@ def test_renders_every_section() -> None:
     assert "TASK" in rendered
     assert "ACCEPTANCE CRITERIA" in rendered
     assert "WORKING DIRECTORY" in rendered
+    assert "MACHINE" in rendered
     assert "PROJECT" in rendered
     assert "RECENT TASKS" in rendered
+
+
+def test_the_machine_is_described_in_full() -> None:
+    rendered = render(context())
+
+    assert "- os: Windows 11 Pro 26100" in rendered
+    assert "- cpu cores: 8" in rendered
+    assert "- ram: 16 GB" in rendered
+    assert "- free disk: 214.5 GB" in rendered
+
+
+def test_capabilities_carry_their_backend_and_strength() -> None:
+    rendered = render(context())
+
+    assert "- sandbox: job_object (medium)" in rendered
+    assert "- database: sqlite (full)" in rendered
+
+
+def test_a_capability_with_no_backend_says_none() -> None:
+    assert "- secrets: none (unavailable)" in render(context())
+
+
+def test_a_machine_with_no_capabilities_still_reports_its_hardware() -> None:
+    bare = MachineFacts(
+        os_version="Windows 11 Pro 26100",
+        cpu_cores=8,
+        ram_gb=16.0,
+        free_disk_gb=214.5,
+    )
+    rendered = render(context(machine=bare))
+
+    assert "MACHINE" in rendered
+    assert "- cpu cores: 8" in rendered
 
 
 def test_the_working_directory_is_stated_verbatim() -> None:
@@ -100,6 +149,14 @@ def test_criteria_survive_a_budget_that_kills_all_history() -> None:
 
     assert "c1" in squeezed
     assert "RECENT TASKS" not in squeezed
+
+
+def test_the_machine_survives_a_budget_that_kills_all_history() -> None:
+    full = context()
+    squeezed = render(full, budget=len(render(full)) - 200)
+
+    assert "- os: Windows 11 Pro 26100" in squeezed
+    assert "Earlier task 11" not in squeezed
 
 
 def test_history_is_capped_before_any_budget_pressure() -> None:

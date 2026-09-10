@@ -10,6 +10,8 @@ MAX_CONTEXT_CHARS = 24000
 
 HISTORY_STEPS = (MAX_HISTORY_ENTRIES, 6, 3, 0)
 
+NO_BACKEND = "none"
+
 
 @dataclass(frozen=True)
 class Criterion:
@@ -25,6 +27,22 @@ class TaskFacts:
     description: str
     kind: str
     state: str
+
+
+@dataclass(frozen=True)
+class Capability:
+    name: str
+    backend: str | None
+    strength: str
+
+
+@dataclass(frozen=True)
+class MachineFacts:
+    os_version: str
+    cpu_cores: int
+    ram_gb: float
+    free_disk_gb: float
+    capabilities: list[Capability] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -48,6 +66,7 @@ class RouterContext:
     task: TaskFacts
     criteria: list[Criterion]
     scope_root: str
+    machine: MachineFacts
     brief: BriefFacts | None = None
     history: list[HistoryEntry] = field(default_factory=list)
 
@@ -80,6 +99,24 @@ def render_history(entry: HistoryEntry) -> str:
     return line
 
 
+def render_capability(capability: Capability) -> str:
+    backend = capability.backend if capability.backend else NO_BACKEND
+
+    return f"- {capability.name}: {backend} ({capability.strength})"
+
+
+def render_machine(machine: MachineFacts) -> list[str]:
+    lines = [
+        f"- os: {machine.os_version}",
+        f"- cpu cores: {machine.cpu_cores}",
+        f"- ram: {machine.ram_gb:g} GB",
+        f"- free disk: {machine.free_disk_gb:g} GB",
+    ]
+    lines.extend(render_capability(capability) for capability in machine.capabilities)
+
+    return lines
+
+
 def sections(context: RouterContext, history_entries: int) -> list[str]:
     task = context.task
 
@@ -101,6 +138,7 @@ def sections(context: RouterContext, history_entries: int) -> list[str]:
         blocks.append("ACCEPTANCE CRITERIA\nnone recorded for this task")
 
     blocks.append(f"WORKING DIRECTORY\n{context.scope_root}")
+    blocks.append("\n".join(["MACHINE", *render_machine(context.machine)]))
 
     if context.brief is not None:
         brief = context.brief

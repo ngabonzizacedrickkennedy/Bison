@@ -7,6 +7,7 @@ from bison_contracts import load_prompt
 
 from router_service.actions import DECLARABLE_TYPES
 from router_service.config import settings
+from router_service.manifest import CAPABILITY_NAMES
 from router_service.plan import FAILURE_POLICIES, INTENTS, SERVICES
 
 TOP_LEVEL_KEYS = ("intent", "rationale", "steps")
@@ -105,6 +106,42 @@ def test_the_prompt_forbids_command_lines() -> None:
 
 def test_the_prompt_requires_a_written_path_to_be_declared() -> None:
     assert "appears in writes_paths as well" in prompt_text()
+
+
+def test_the_prompt_names_the_machine_block() -> None:
+    assert "MACHINE block" in prompt_text()
+
+
+@pytest.mark.parametrize("capability", sorted(CAPABILITY_NAMES))
+def test_the_prompt_names_every_capability_the_context_renders(capability: str) -> None:
+    assert capability in prompt_text()
+
+
+def test_the_prompt_names_every_hardware_fact_the_context_renders() -> None:
+    text = prompt_text()
+
+    assert "operating system" in text
+    assert "core count" in text
+    assert "memory" in text
+    assert "free disk" in text
+
+
+def test_the_prompt_says_an_unavailable_capability_cannot_be_used() -> None:
+    assert "strength is unavailable cannot be used" in prompt_text()
+
+
+def test_the_prompt_says_the_machine_is_reread_on_every_plan() -> None:
+    text = prompt_text()
+
+    assert "read afresh every time a plan is made" in text
+    assert "re-planned" in text
+
+
+def test_the_service_is_configured_with_a_prompt_that_knows_about_the_machine() -> None:
+    resolved = settings()
+
+    assert resolved.prompt_version == "v5"
+    assert "MACHINE" in load_prompt(resolved.prompt_name, resolved.prompt_version).text
 
 
 def test_the_service_is_configured_with_a_prompt_that_knows_about_actions() -> None:

@@ -15,6 +15,11 @@ from router_service.broker import BrokerClient, BrokerError, BrokerUnreachableEr
 from router_service.config import settings
 from router_service.context import RouterContext
 from router_service.gating import GatedStep, PlanRejectedError
+from router_service.manifest import (
+    ManifestUnavailableError,
+    load_manifest,
+    to_machine_facts,
+)
 from router_service.persist import plan_payload
 from router_service.plan import RouterParseError
 from router_service.upstream import (
@@ -147,6 +152,11 @@ async def handle_rejected(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(status_code=422, content={"error": "plan_rejected", "detail": str(exc)})
 
 
+@app.exception_handler(ManifestUnavailableError)
+async def handle_no_manifest(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(status_code=503, content={"error": "no_manifest", "detail": str(exc)})
+
+
 @app.exception_handler(PlanNotStoredError)
 async def handle_not_stored(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse(status_code=502, content={"error": "plan_not_stored", "detail": str(exc)})
@@ -206,6 +216,7 @@ async def plan_task(project_id: str, task_id: str, request_id: str | None = None
         task=task,
         criteria=criteria,
         scope_root=scope_root,
+        machine=to_machine_facts(load_manifest()),
         brief=brief,
         history=history,
     )
