@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { ActivityBar } from "./ActivityBar";
 import { AddTask } from "./AddTask";
 import { CapabilityBar } from "./CapabilityBar";
+import { HaltBanner } from "./HaltBanner";
 import { ModelPicker } from "./ModelPicker";
 import { RoleBar } from "./RoleBar";
 import { RunPanel } from "./RunPanel";
@@ -16,7 +17,7 @@ import { useTasks } from "./useTasks";
 import "./styles.css";
 
 export function App() {
-  const { state, historyState, messages, activity, send } = useGateway(
+  const { state, historyState, messages, activity, halt, send } = useGateway(
     window.bison.gatewayWebSocketUrl,
     window.bison.gatewayHttpUrl,
   );
@@ -109,6 +110,8 @@ export function App() {
           {historyState === "ready" && `${messages.length} messages`}
         </span>
       </div>
+
+      <HaltBanner halt={halt} />
 
       <CapabilityBar manifestState={manifestState} manifest={manifest} />
 
