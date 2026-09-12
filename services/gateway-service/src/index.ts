@@ -30,10 +30,12 @@ import {
   ProjectError,
   createTask,
   fetchProgress,
+  listProjects,
   listTasks,
   moveTask,
   projectHealthy,
 } from "./project-client.js";
+import { SwitchRefusedError, switchProject } from "./switch.js";
 import { listMessages, persistMessage, taskStoreHealthy } from "./task-store-client.js";
 
 export const SERVICE_NAME = "gateway-service";
@@ -224,6 +226,55 @@ export function buildServer() {
 
       app.log.error({ err: error, modelId }, "pull failed to start");
       return reply.status(503).send({ error: "model-broker unavailable" });
+    }
+  });
+
+  app.get("/projects", async (_request, reply) => viaProject(reply, () => listProjects()));
+
+  app.post("/projects/:projectId/activate", async (request, reply) => {
+    const params = request.params as { projectId: string };
+    const body = request.body as { reason?: unknown; actor?: unknown } | null;
+
+    const transition = {
+      reason: typeof body?.reason === "string" && body.reason.trim() !== "" ? body.reason : null,
+      actor: typeof body?.actor === "string" && body.actor.trim() !== "" ? body.actor : "user",
+    };
+
+    try {
+      const outcome = await switchProject(params.projectId, transition);
+
+      app.log.warn(
+        {
+          project: outcome.activated.id,
+          switched: outcome.switched,
+          paused: outcome.paused,
+          halt: outcome.signal?.id ?? null,
+        },
+        "project switch",
+      );
+
+      const signal = outcome.signal;
+
+      if (signal !== null) {
+        for (const emit of clients) {
+          emit("halt", signal.request_id ?? signal.id, signal);
+        }
+      }
+
+      return outcome;
+    } catch (error) {
+      if (error instanceof SwitchRefusedError) {
+        app.log.warn({ project: error.projectId, state: error.state }, "project switch refused");
+        return reply.status(409).send({ error: error.message });
+      }
+
+      if (error instanceof ProjectError) {
+        app.log.warn({ status: error.status, detail: error.detail }, "project-service refused");
+        return reply.status(error.status).send({ error: error.detail });
+      }
+
+      app.log.error({ err: error }, "project switch failed");
+      return reply.status(503).send({ error: "project-service unavailable" });
     }
   });
 
