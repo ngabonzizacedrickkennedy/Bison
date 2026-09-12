@@ -1,5 +1,17 @@
+import type { Project, ProjectState } from "@bison/contracts";
 import { request } from "undici";
 import { config } from "./config.js";
+
+export interface ProjectList {
+  projects: Project[];
+  open_projects: number;
+  max_projects: number;
+}
+
+export interface ProjectTransition {
+  reason?: string | null;
+  actor?: string;
+}
 
 export interface Task {
   id: string;
@@ -90,6 +102,23 @@ async function send<T>(method: "GET" | "POST", path: string, payload?: unknown):
   }
 
   return JSON.parse(text) as T;
+}
+
+export async function listProjects(state?: ProjectState): Promise<ProjectList> {
+  const query = state === undefined ? "" : `?state=${encodeURIComponent(state)}`;
+
+  return send<ProjectList>("GET", `/projects${query}`);
+}
+
+export async function readProject(projectId: string): Promise<Project> {
+  return send<Project>("GET", `/projects/${encodeURIComponent(projectId)}`);
+}
+
+export async function activateProject(
+  projectId: string,
+  transition: ProjectTransition,
+): Promise<Project> {
+  return send<Project>("POST", `/projects/${encodeURIComponent(projectId)}/activate`, transition);
 }
 
 export async function listTasks(projectId: string): Promise<Task[]> {
